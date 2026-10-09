@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Code2, 
   Play, 
@@ -8,7 +8,8 @@ import {
   Eye,
   AlertTriangle, 
   Workflow,
-  Sparkles
+  Sparkles,
+  Printer
 } from 'lucide-react';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { 
@@ -16,6 +17,7 @@ import {
   compileLatexToPdf, 
   compileLatexToWord, 
   validateLatexSyntax, 
+  convertLatexToHtml,
   LatexCompileError 
 } from '../../services/latexEngine';
 import { downloadFile } from '../../services/zipService';
@@ -23,12 +25,15 @@ import { downloadFile } from '../../services/zipService';
 export const LatexTool: React.FC = () => {
   const { chainWorkflow, addToast } = useWorkspace();
 
-  const [code, setCode] = useState<string>(LATEX_TEMPLATES.report);
-  const [selectedTemplate, setSelectedTemplate] = useState<keyof typeof LATEX_TEMPLATES>('report');
+  const [code, setCode] = useState<string>(LATEX_TEMPLATES.math);
+  const [selectedTemplate, setSelectedTemplate] = useState<keyof typeof LATEX_TEMPLATES>('math');
   const [isCompiling, setIsCompiling] = useState(false);
   const [compileErrors, setCompileErrors] = useState<LatexCompileError[]>([]);
   const [compiledPdfBytes, setCompiledPdfBytes] = useState<Uint8Array | null>(null);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [previewMode, setPreviewMode] = useState<'math' | 'pdf'>('math');
+
+  const printFrameRef = useRef<HTMLIFrameElement | null>(null);
 
   // Validate syntax on code change
   useEffect(() => {
@@ -48,6 +53,11 @@ export const LatexTool: React.FC = () => {
     }
   }, [compiledPdfBytes]);
 
+  // Compute live HTML with KaTeX formulas
+  const liveHtmlContent = useMemo(() => {
+    return convertLatexToHtml(code);
+  }, [code]);
+
   const handleSelectTemplate = (key: keyof typeof LATEX_TEMPLATES) => {
     setSelectedTemplate(key);
     setCode(LATEX_TEMPLATES[key]);
@@ -60,6 +70,7 @@ export const LatexTool: React.FC = () => {
     try {
       const pdfBytes = await compileLatexToPdf(code);
       setCompiledPdfBytes(pdfBytes);
+      setPreviewMode('pdf');
       addToast('Biên dịch LaTeX sang PDF thành công!', 'success');
     } catch (err: any) {
       console.error(err);
@@ -73,6 +84,42 @@ export const LatexTool: React.FC = () => {
     if (!compiledPdfBytes) return;
     downloadFile(compiledPdfBytes, 'latex_document.pdf');
     addToast('Đã tải xuống latex_document.pdf', 'success');
+  };
+
+  const handlePrintDocument = () => {
+    const iframe = printFrameRef.current;
+    if (!iframe) return;
+
+    const doc = iframe.contentWindow?.document;
+    if (!doc) return;
+
+    doc.open();
+    doc.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Tài liệu Toán học - DocFlow</title>
+          <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css" />
+          <script src="https://cdn.tailwindcss.com"></script>
+          <style>
+            @media print {
+              body { padding: 0 !important; margin: 0 !important; }
+              @page { margin: 15mm; size: A4; }
+            }
+            .katex-display { text-align: center !important; margin: 1.2rem 0 !important; }
+          </style>
+        </head>
+        <body class="bg-white text-slate-900 font-sans p-8">
+          ${liveHtmlContent}
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    setTimeout(() => {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    }, 350);
   };
 
   const handleConvertToWord = async () => {
@@ -110,7 +157,10 @@ export const LatexTool: React.FC = () => {
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-900 text-slate-100">
-      {/* Main Dual-Pane Studio Body: 100% height without redundant header */}
+      {/* Hidden print iframe */}
+      <iframe ref={printFrameRef} className="hidden" title="Print Frame" />
+
+      {/* Main Dual-Pane Studio Body */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 overflow-hidden">
         
         {/* Left Pane: Code Editor */}
@@ -126,8 +176,8 @@ export const LatexTool: React.FC = () => {
 
               <div className="flex items-center gap-1 ml-1">
                 {[
-                  { id: 'report', label: 'Báo cáo' },
                   { id: 'math', label: 'Toán học' },
+                  { id: 'report', label: 'Báo cáo' },
                   { id: 'thesis', label: 'Luận văn' },
                   { id: 'assignment', label: 'Bài tập' },
                 ].map((t) => (
@@ -160,27 +210,21 @@ export const LatexTool: React.FC = () => {
               <button
                 onClick={handleCompilePdf}
                 disabled={isCompiling}
-                className="px-3 py-1 bg-brand-600 hover:bg-brand-500 active:bg-brand-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-md shadow-brand-500/20 transition-all disabled:opacity-50"
+                className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold rounded-lg flex items-center gap-1.5 shadow-md shadow-purple-600/30 transition-all cursor-pointer"
               >
-                <Play className="w-3 h-3 fill-white" />
-                <span>{isCompiling ? 'Đang biên dịch...' : 'Compile PDF'}</span>
+                <Play className={`w-3 h-3 fill-current ${isCompiling ? 'animate-spin' : ''}`} />
+                <span>{isCompiling ? 'Đang biên dịch...' : 'Biên dịch PDF'}</span>
               </button>
             </div>
           </div>
 
-          <div className="flex-1 relative overflow-hidden flex">
-            {/* Line numbers simulated column */}
-            <div className="w-10 py-3 bg-slate-950 text-slate-600 font-mono text-xs select-none text-right pr-2 leading-relaxed shrink-0 border-r border-slate-900">
-              {Array.from({ length: 45 }, (_, i) => (
-                <div key={i}>{i + 1}</div>
-              ))}
-            </div>
-
-            {/* Editor textarea */}
+          {/* Line Numbers & Code Input */}
+          <div className="flex-1 flex overflow-hidden">
             <textarea
               value={code}
               onChange={(e) => setCode(e.target.value)}
               spellCheck={false}
+              placeholder="Dán mã nguồn LaTeX hoặc tài liệu Toán học Markdown vào đây..."
               className="flex-1 p-3 text-xs font-mono leading-relaxed bg-slate-950 text-slate-100 selection:bg-purple-600 selection:text-white focus:outline-hidden resize-none overflow-y-auto no-scrollbar"
             />
           </div>
@@ -201,73 +245,122 @@ export const LatexTool: React.FC = () => {
           )}
         </div>
 
-        {/* Right Pane: Live PDF Viewer / Output Console */}
+        {/* Right Pane: Live KaTeX Math & PDF Viewer */}
         <div className="flex flex-col h-full overflow-hidden bg-slate-900/50">
           
           {/* Preview Pane Toolbar */}
-          <div className="px-3 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2">
-              <Eye className="w-3.5 h-3.5 text-purple-400" />
-              <span className="font-semibold text-slate-300">Live Preview Đầu Ra</span>
+          <div className="px-3 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs flex-wrap gap-2">
+            {/* View Mode Toggle: Math vs PDF */}
+            <div className="flex items-center gap-1 bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+              <button
+                onClick={() => setPreviewMode('math')}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition-all ${
+                  previewMode === 'math'
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Eye className="w-3 h-3" />
+                <span>Xem Toán học (KaTeX)</span>
+              </button>
+
+              <button
+                onClick={() => setPreviewMode('pdf')}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition-all ${
+                  previewMode === 'pdf'
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <FileDown className="w-3 h-3" />
+                <span>Bản in PDF {compiledPdfBytes ? '✓' : ''}</span>
+              </button>
             </div>
 
-            {compiledPdfBytes && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleDownloadPdf}
-                  className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors"
-                >
-                  <Download className="w-3 h-3" />
-                  <span>Tải PDF</span>
-                </button>
-                <button
-                  onClick={handleConvertToWord}
-                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-blue-300 rounded-lg text-[11px] font-semibold flex items-center gap-1 border border-slate-700 transition-colors"
-                >
-                  <FileType2 className="w-3 h-3" />
-                  <span className="hidden sm:inline">Xuất Word (.docx)</span>
-                </button>
-                <button
-                  onClick={handleChainToWorkspace}
-                  className="px-2.5 py-1 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors"
-                  title="Đưa vào Workspace để tiếp tục Ký, Nén hoặc Ghép"
-                >
-                  <Workflow className="w-3 h-3" />
-                  <span className="hidden sm:inline">Đưa vào Workspace</span>
-                </button>
-              </div>
-            )}
+            {/* Quick action buttons */}
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={handlePrintDocument}
+                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-[11px] font-semibold flex items-center gap-1 border border-slate-700 transition-colors"
+                title="In hoặc Lưu thành tệp PDF Vector chuẩn của trình duyệt"
+              >
+                <Printer className="w-3 h-3 text-emerald-400" />
+                <span className="hidden sm:inline">In / Lưu PDF</span>
+              </button>
+
+              <button
+                onClick={handleConvertToWord}
+                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-blue-300 rounded-lg text-[11px] font-semibold flex items-center gap-1 border border-slate-700 transition-colors"
+                title="Xuất sang định dạng Word (.docx)"
+              >
+                <FileType2 className="w-3 h-3" />
+                <span className="hidden sm:inline">Xuất Word</span>
+              </button>
+
+              {compiledPdfBytes && (
+                <>
+                  <button
+                    onClick={handleDownloadPdf}
+                    className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>Tải PDF</span>
+                  </button>
+
+                  <button
+                    onClick={handleChainToWorkspace}
+                    className="px-2.5 py-1 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors"
+                    title="Đưa vào Workspace để tiếp tục Ký, Nén hoặc Ghép"
+                  >
+                    <Workflow className="w-3 h-3" />
+                    <span className="hidden sm:inline">Đưa vào Workspace</span>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
-          <div className="flex-1 p-3 sm:p-4 overflow-y-auto flex items-center justify-center bg-slate-950/40">
-            {pdfPreviewUrl ? (
-              <iframe
-                src={pdfPreviewUrl}
-                title="LaTeX Compiled PDF Preview"
-                className="w-full h-full rounded-xl border border-slate-700 bg-white shadow-xl"
-              />
-            ) : (
-              <div className="text-center p-8 max-w-sm space-y-4">
-                <div className="w-16 h-16 rounded-2xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center mx-auto">
-                  <Code2 className="w-8 h-8" />
-                </div>
-                <div className="space-y-1">
-                  <h4 className="text-sm font-bold text-slate-200">
-                    Sẵn sàng biên dịch
-                  </h4>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Nhấn nút <b className="text-purple-400">Compile PDF</b> ở thanh công cụ bên trái để biên dịch mã nguồn LaTeX và xem trước kết quả trực tiếp.
-                  </p>
-                </div>
-                <button
-                  onClick={handleCompilePdf}
-                  disabled={isCompiling}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold inline-flex items-center gap-2 shadow-lg shadow-purple-600/20 transition-all"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>Biên dịch ngay bây giờ</span>
-                </button>
+          {/* Preview Canvas / Document Area */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex items-start justify-center bg-slate-950/60">
+            {previewMode === 'math' ? (
+              /* Mode 1: Interactive KaTeX Live Math Document */
+              <div className="w-full max-w-3xl bg-white text-slate-900 rounded-2xl shadow-2xl border border-slate-200/80 overflow-hidden min-h-[800px] animate-in fade-in duration-200">
+                <div 
+                  dangerouslySetInnerHTML={{ __html: liveHtmlContent }} 
+                  className="p-6 sm:p-10 select-text"
+                />
               </div>
+            ) : (
+              /* Mode 2: Compiled PDF Viewer */
+              pdfPreviewUrl ? (
+                <iframe
+                  src={pdfPreviewUrl}
+                  title="LaTeX Compiled PDF Preview"
+                  className="w-full h-full min-h-[750px] rounded-2xl border border-slate-700 bg-white shadow-2xl"
+                />
+              ) : (
+                <div className="text-center p-8 max-w-sm space-y-4 my-auto">
+                  <div className="w-16 h-16 rounded-2xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center mx-auto">
+                    <Code2 className="w-8 h-8" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-bold text-slate-200">
+                      Chưa biên dịch tệp PDF
+                    </h4>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Bạn có thể xem trước công thức trực tiếp ở tab <b className="text-purple-400">Xem Toán học (KaTeX)</b> hoặc bấm nút bên dưới để tạo file PDF đóng gói.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleCompilePdf}
+                    disabled={isCompiling}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold inline-flex items-center gap-2 shadow-lg shadow-purple-600/20 transition-all cursor-pointer"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>Biên dịch PDF ngay</span>
+                  </button>
+                </div>
+              )
             )}
           </div>
 

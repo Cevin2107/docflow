@@ -1,6 +1,8 @@
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
-import { Document, Paragraph, TextRun, HeadingLevel, Packer, Table, TableRow, TableCell, WidthType } from 'docx';
+import { Document, Paragraph, TextRun, HeadingLevel, Packer } from 'docx';
 import { removeDiacritics } from '../utils/formatters';
+import katex from 'katex';
+import html2canvas from 'html2canvas';
 
 export interface LatexCompileError {
   line: number;
@@ -49,13 +51,12 @@ DocFlow mang lại trải nghiệm làm việc năng suất và an toàn.
 
 \\section{Định lý và Công thức}
 Xét phương trình vi phân và tích phân cơ bản:
-$$E = mc^2$$
-$$f(x) = \\int_{0}^{\\infty} e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}$$
+\\[E = mc^2\\]
+\\[f(x) = \\int_{0}^{\\infty} e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}\\]
 
 \\section{Ma trận & Hệ phương trình}
-Hệ phương trình tuyến tính hai ẩn:
-$$a_1 x + b_1 y = c_1$$
-$$a_2 x + b_2 y = c_2$$
+Hệ phương trình lượng giác:
+\\[\\begin{bmatrix} x = \\alpha + k2\\pi \\\\ x = \\pi - \\alpha + k2\\pi \\end{bmatrix} \\quad (k \\in \\mathbb{Z})\\]
 
 \\section{Nhận xét}
 Công thức được biên dịch tự động chuẩn hóa sang PDF và Word DOCX.
@@ -100,128 +101,58 @@ Viết đoạn mã mô phỏng thuật toán phát hiện trang trắng dựa tr
 };
 
 /**
- * Cleans and converts LaTeX math symbols to Unicode representations for rendering
+ * Fallback string cleaner for Word export and plain text
  */
 export function cleanMathExpression(expr: string): string {
   if (!expr) return '';
   let s = expr;
 
-  // Greek letters
   s = s.replace(/\\alpha/g, 'α');
   s = s.replace(/\\beta/g, 'β');
   s = s.replace(/\\gamma/g, 'γ');
   s = s.replace(/\\delta/g, 'δ');
-  s = s.replace(/\\epsilon/g, 'ε');
-  s = s.replace(/\\theta/g, 'θ');
-  s = s.replace(/\\lambda/g, 'λ');
-  s = s.replace(/\\mu/g, 'μ');
   s = s.replace(/\\pi/g, 'π');
-  s = s.replace(/\\sigma/g, 'σ');
-  s = s.replace(/\\tau/g, 'τ');
-  s = s.replace(/\\phi/g, 'φ');
-  s = s.replace(/\\varphi/g, 'φ');
+  s = s.replace(/\\theta/g, 'θ');
   s = s.replace(/\\omega/g, 'ω');
-  s = s.replace(/\\Delta/g, 'Δ');
-  s = s.replace(/\\Omega/g, 'Ω');
-  s = s.replace(/\\Theta/g, 'Θ');
-
-  // Math sets
+  s = s.replace(/\\varphi/g, 'φ');
   s = s.replace(/\\mathbb\{Z\}/g, 'ℤ');
   s = s.replace(/\\mathbb\{R\}/g, 'ℝ');
   s = s.replace(/\\mathbb\{N\}/g, 'ℕ');
-  s = s.replace(/\\mathbb\{Q\}/g, 'ℚ');
-  s = s.replace(/\\mathbb\{C\}/g, 'ℂ');
-
-  // Logic & Set Operators
   s = s.replace(/\\in/g, ' ∈ ');
   s = s.replace(/\\notin/g, ' ∉ ');
-  s = s.replace(/\\subset/g, ' ⊂ ');
-  s = s.replace(/\\subseteq/g, ' ⊆ ');
-  s = s.replace(/\\setminus/g, ' \\ ');
-  s = s.replace(/\\mid/g, ' | ');
-  s = s.replace(/\\infty/g, '∞');
   s = s.replace(/\\pm/g, ' ± ');
-  s = s.replace(/\\mp/g, ' ∓ ');
   s = s.replace(/\\cdot/g, ' · ');
   s = s.replace(/\\times/g, ' × ');
-  s = s.replace(/\\div/g, ' ÷ ');
   s = s.replace(/\\neq/g, ' ≠ ');
   s = s.replace(/\\le\b/g, ' ≤ ');
   s = s.replace(/\\leq\b/g, ' ≤ ');
   s = s.replace(/\\ge\b/g, ' ≥ ');
   s = s.replace(/\\geq\b/g, ' ≥ ');
-  s = s.replace(/\\approx/g, ' ≈ ');
-  s = s.replace(/\\equiv/g, ' ≡ ');
   s = s.replace(/\\implies/g, ' ⟹ ');
   s = s.replace(/\\iff/g, ' ⟺ ');
-  s = s.replace(/\\to\b/g, ' ⟶ ');
-  s = s.replace(/\\rightarrow/g, ' ⟶ ');
-  s = s.replace(/\\leftarrow/g, ' ⟵ ');
   s = s.replace(/\\circ/g, '°');
-
-  // Spacing & accents
   s = s.replace(/\\quad/g, '   ');
   s = s.replace(/\\qquad/g, '      ');
-  s = s.replace(/\\,/g, ' ');
-  s = s.replace(/\\;/g, ' ');
-  s = s.replace(/\\!/g, '');
-
-  // Parentheses & brackets
-  s = s.replace(/\\left\(/g, '(');
-  s = s.replace(/\\right\)/g, ')');
-  s = s.replace(/\\left\[/g, '[');
-  s = s.replace(/\\right\]/g, ']');
-  s = s.replace(/\\left\\\{/g, '{');
-  s = s.replace(/\\right\\\}/g, '}');
-  s = s.replace(/\\left\|/g, '|');
-  s = s.replace(/\\right\|/g, '|');
-
-  // Text inside math
   s = s.replace(/\\text\{([^}]+)\}/g, '$1');
-  s = s.replace(/\\mathrm\{([^}]+)\}/g, '$1');
-  s = s.replace(/\\mathbf\{([^}]+)\}/g, '$1');
-
-  // Trig & Functions
-  s = s.replace(/\\sin\b/g, 'sin');
-  s = s.replace(/\\cos\b/g, 'cos');
-  s = s.replace(/\\tan\b/g, 'tan');
-  s = s.replace(/\\cot\b/g, 'cot');
-  s = s.replace(/\\ln\b/g, 'ln');
-  s = s.replace(/\\log\b/g, 'log');
-  s = s.replace(/\\lim\b/g, 'lim');
-
-  // Fractions & Roots
   s = s.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)');
   s = s.replace(/\\sqrt\{([^}]+)\}/g, '√($1)');
-
-  // Matrix and systems
   s = s.replace(/\\begin\{bmatrix\}/g, '[ ');
   s = s.replace(/\\end\{bmatrix\}/g, ' ]');
-  s = s.replace(/\\begin\{pmatrix\}/g, '( ');
-  s = s.replace(/\\end\{pmatrix\}/g, ' )');
-  s = s.replace(/\\begin\{cases\}/g, '{ ');
-  s = s.replace(/\\end\{cases\}/g, ' }');
-
-  // Clean trailing line breaks
-  s = s.replace(/\\\\/g, '   |   ');
+  s = s.replace(/\\\\/g, '  |  ');
   s = s.replace(/\s+/g, ' ').trim();
-
   return s;
 }
 
-/**
- * Replaces inline math delimiters \( ... \) and $ ... $ with clean math symbols
- */
 export function cleanInlineMath(text: string): string {
   if (!text) return '';
-  let res = text.replace(/\\\((.*?)\\\)/g, (_, m) => cleanMathExpression(m));
+  let res = text.replace(/\\\\\((.*?)\\\\\)/g, (_, m) => cleanMathExpression(m));
+  res = res.replace(/\\\((.*?)\\\)/g, (_, m) => cleanMathExpression(m));
   res = res.replace(/\$([^$]+)\$/g, (_, m) => cleanMathExpression(m));
   return res;
 }
 
 /**
- * Validates LaTeX source code for syntax issues.
- * Gracefully permits freeform Markdown + Math documents without forcing \documentclass.
+ * Validates LaTeX source code
  */
 export function validateLatexSyntax(code: string): LatexCompileError[] {
   const errors: LatexCompileError[] = [];
@@ -231,16 +162,14 @@ export function validateLatexSyntax(code: string): LatexCompileError[] {
   const hasBeginDoc = code.includes('\\begin{document}');
   const hasEndDoc = code.includes('\\end{document}');
 
-  // Detect if document is freeform Math/Markdown
   const isFreeformMathDoc = !hasDocClass && (
     code.includes('\\[') || code.includes('\\(') || code.includes('$$') ||
-    code.includes('\\begin{bmatrix}') || code.includes('\\begin{array}') ||
-    code.includes('\\sin') || code.includes('\\cos') || code.includes('\\alpha') ||
-    lines.some(l => l.trim().startsWith('#'))
+    code.includes('\\begin{') || code.includes('\\alpha') || code.includes('\\sin') ||
+    lines.some((l) => l.trim().startsWith('#'))
   );
 
   if (!hasDocClass && !isFreeformMathDoc) {
-    errors.push({ line: 1, message: 'Gợi ý: Thêm khai báo \\documentclass{...} cho chuẩn LaTeX', type: 'warning' });
+    errors.push({ line: 1, message: 'Gợi ý: Thêm \\documentclass{article} cho cấu trúc LaTeX chuẩn', type: 'warning' });
   }
 
   if (hasBeginDoc && !hasEndDoc) {
@@ -251,199 +180,79 @@ export function validateLatexSyntax(code: string): LatexCompileError[] {
 }
 
 /**
- * Renders a LaTeX \begin{array} table on canvas
+ * Safely renders LaTeX math using KaTeX with fallback
  */
-function renderMathArrayTable(
-  ctx: CanvasRenderingContext2D,
-  arrayStr: string,
-  startX: number,
-  startY: number,
-  maxWidth: number,
-  fontFamily: string
-): number {
-  const inner = arrayStr
-    .replace(/\\begin\{array\}\{[^}]*\}/, '')
-    .replace(/\\end\{array\}/, '')
-    .trim();
-
-  const rawRows = inner.split(/\\\\/);
-  const rows: string[][] = [];
-
-  for (const rawRow of rawRows) {
-    const cleanedRow = rawRow.replace(/\\hline/g, '').trim();
-    if (!cleanedRow) continue;
-    const cells = cleanedRow.split('&').map(c => cleanMathExpression(c.trim()));
-    if (cells.length > 0 && cells.some(c => c.length > 0)) {
-      rows.push(cells);
-    }
+function renderKaTeX(formula: string, displayMode: boolean): string {
+  try {
+    return katex.renderToString(formula.trim(), {
+      displayMode,
+      throwOnError: false,
+      strict: false,
+    });
+  } catch {
+    return `<span class="katex-fallback font-mono text-blue-700">${formula}</span>`;
   }
-
-  if (rows.length === 0) return 0;
-
-  const numCols = Math.max(...rows.map(r => r.length));
-  if (numCols === 0) return 0;
-
-  const colWidth = maxWidth / numCols;
-  const rowHeight = 24;
-  const totalHeight = rows.length * rowHeight;
-
-  ctx.save();
-  for (let r = 0; r < rows.length; r++) {
-    const y = startY + r * rowHeight;
-    const isHeader = r === 0;
-
-    for (let c = 0; c < numCols; c++) {
-      const x = startX + c * colWidth;
-      const cellText = rows[r][c] || '';
-
-      if (isHeader) {
-        ctx.fillStyle = '#f1f5f9';
-        ctx.fillRect(x, y, colWidth, rowHeight);
-      }
-
-      ctx.strokeStyle = '#cbd5e1';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x, y, colWidth, rowHeight);
-
-      ctx.font = (isHeader ? 'bold 8.5pt ' : '9.5pt ') + fontFamily;
-      ctx.fillStyle = isHeader ? '#1e293b' : '#334155';
-      ctx.textAlign = 'center';
-      ctx.fillText(cellText, x + colWidth / 2, y + 16);
-    }
-  }
-  ctx.restore();
-
-  return totalHeight;
 }
 
 /**
- * Renders LaTeX & Math Markdown content to high-resolution Canvas pages with 100% Vietnamese support
+ * Converts any LaTeX, Markdown, or Math text into beautiful, semantic HTML
  */
-function renderLatexPagesToCanvas(
-  code: string,
-  meta: { title: string; author: string; date: string }
-): HTMLCanvasElement[] {
-  const pageWidth = 595.28;
-  const pageHeight = 841.89;
-  const scale = 2; // Retina 2x scale for sharp print quality
-  const margin = 50;
-  const contentWidth = pageWidth - margin * 2;
-  const fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+export function convertLatexToHtml(rawCode: string): string {
+  if (!rawCode) return '';
 
-  const canvases: HTMLCanvasElement[] = [];
-
-  function createNewCanvas() {
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(pageWidth * scale);
-    canvas.height = Math.round(pageHeight * scale);
-    const ctx = canvas.getContext('2d')!;
-    ctx.scale(scale, scale);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, pageWidth, pageHeight);
-    return { canvas, ctx };
-  }
-
-  let { canvas: currentCanvas, ctx: currentCtx } = createNewCanvas();
-  let currentY = margin;
-  let pageNumber = 1;
-
-  function wrapText(text: string, maxWidth: number, font: string): string[] {
-    currentCtx.font = font;
-    const words = text.split(/\s+/);
-    const resultLines: string[] = [];
-    let currentLine = '';
-
-    for (const word of words) {
-      const testLine = currentLine ? `${currentLine} ${word}` : word;
-      const testWidth = currentCtx.measureText(testLine).width;
-      if (testWidth > maxWidth && currentLine) {
-        resultLines.push(currentLine);
-        currentLine = word;
-      } else {
-        currentLine = testLine;
-      }
-    }
-    if (currentLine) {
-      resultLines.push(currentLine);
-    }
-    return resultLines.length > 0 ? resultLines : [''];
-  }
-
-  function checkPageBreak(requiredHeight: number) {
-    if (currentY + requiredHeight > pageHeight - margin - 35) {
-      currentCtx.font = `9pt ${fontFamily}`;
-      currentCtx.fillStyle = '#94a3b8';
-      currentCtx.textAlign = 'center';
-      currentCtx.fillText(`Trang ${pageNumber}`, pageWidth / 2, pageHeight - margin / 2);
-      currentCtx.textAlign = 'left';
-
-      canvases.push(currentCanvas);
-      pageNumber++;
-
-      const newPage = createNewCanvas();
-      currentCanvas = newPage.canvas;
-      currentCtx = newPage.ctx;
-      currentY = margin;
-    }
-  }
-
-  // Determine Title: from meta.title or from Markdown # Title
-  let docTitle = meta.title;
-  const mdTitleMatch = code.match(/^#\s+(.+)$/m);
-  if ((!docTitle || docTitle === 'Tài liệu LaTeX') && mdTitleMatch) {
-    docTitle = mdTitleMatch[1].replace(/\*\*/g, '').trim();
-  }
-
-  // Draw Header Title
-  if (docTitle) {
-    const titleLines = wrapText(docTitle, contentWidth, `bold 17pt ${fontFamily}`);
-    currentCtx.font = `bold 17pt ${fontFamily}`;
-    currentCtx.fillStyle = '#0f172a';
-    for (const line of titleLines) {
-      checkPageBreak(28);
-      currentCtx.fillText(line, margin, currentY + 17);
-      currentY += 25;
-    }
-    currentY += 4;
-  }
-
-  // Draw Author & Date
-  if (meta.author || meta.date) {
-    checkPageBreak(22);
-    currentCtx.font = `italic 10pt ${fontFamily}`;
-    currentCtx.fillStyle = '#475569';
-    const dateFormatted = meta.date === '\\today' ? new Date().toLocaleDateString('vi-VN') : meta.date;
-    const subText = [
-      meta.author ? `Tác giả: ${meta.author}` : '',
-      dateFormatted ? `Ngày: ${dateFormatted}` : ''
-    ].filter(Boolean).join('   •   ');
-
-    currentCtx.fillText(subText, margin, currentY + 10);
-    currentY += 18;
-  }
-
-  // Divider line
-  checkPageBreak(16);
-  currentCtx.strokeStyle = '#e2e8f0';
-  currentCtx.lineWidth = 1;
-  currentCtx.beginPath();
-  currentCtx.moveTo(margin, currentY);
-  currentCtx.lineTo(pageWidth - margin, currentY);
-  currentCtx.stroke();
-  currentY += 18;
+  // 1. Normalize escaped backslashes (\\( -> \(, \\[ -> \[, etc.)
+  let code = rawCode.replace(/\\\\([()[\]])/g, '\\$1');
 
   const lines = code.split('\n');
-  const hasFormalDocument = code.includes('\\begin{document}');
-  let inDocument = !hasFormalDocument; // Freeform documents are parsed directly
+  const htmlParts: string[] = [];
 
-  let inMathBlock = false;
+  let inDocument = !code.includes('\\begin{document}');
+  let inDisplayMath = false;
   let mathBuffer: string[] = [];
+
+  // Extract metadata
+  const titleMatch = code.match(/\\title\{([^}]+)\}/);
+  const authorMatch = code.match(/\\author\{([^}]+)\}/);
+  const dateMatch = code.match(/\\date\{([^}]+)\}/);
+  const mdTitleMatch = code.match(/^#\s+(.+)$/m);
+
+  const docTitle = titleMatch ? titleMatch[1] : (mdTitleMatch ? mdTitleMatch[1].replace(/\*\*/g, '').trim() : '');
+  const docAuthor = authorMatch ? authorMatch[1] : '';
+  const docDate = dateMatch ? (dateMatch[1] === '\\today' ? new Date().toLocaleDateString('vi-VN') : dateMatch[1]) : '';
+
+  // Render Document Header
+  if (docTitle) {
+    htmlParts.push(`
+      <header class="doc-header pb-4 mb-6 border-b-2 border-slate-200 text-center">
+        <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight mb-2">${docTitle}</h1>
+        ${(docAuthor || docDate) ? `
+          <div class="text-xs sm:text-sm font-medium text-slate-500 flex items-center justify-center gap-3">
+            ${docAuthor ? `<span>Tác giả: <strong class="text-slate-700 font-semibold">${docAuthor}</strong></span>` : ''}
+            ${(docAuthor && docDate) ? `<span>•</span>` : ''}
+            ${docDate ? `<span>Ngày: ${docDate}</span>` : ''}
+          </div>
+        ` : ''}
+      </header>
+    `);
+  }
+
+  function parseInline(text: string): string {
+    // 1. Parse inline math \( ... \)
+    let parsed = text.replace(/\\\((.*?)\\\)/g, (_, m) => renderKaTeX(m, false));
+    // 2. Parse inline math $ ... $
+    parsed = parsed.replace(/\$([^$]+)\$/g, (_, m) => renderKaTeX(m, false));
+    // 3. Parse Markdown bold **...**
+    parsed = parsed.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-bold text-slate-900">$1</strong>');
+    // 4. Parse Markdown italic *...*
+    parsed = parsed.replace(/\*([^*]+)\*/g, '<em class="italic text-slate-700">$1</em>');
+    return parsed;
+  }
 
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i];
     const trimmed = rawLine.trim();
 
-    // Check formal LaTeX boundaries
+    // LaTeX document boundaries
     if (trimmed.includes('\\begin{document}')) {
       inDocument = true;
       continue;
@@ -458,300 +267,242 @@ function renderLatexPagesToCanvas(
       continue;
     }
 
-    // 1. Multi-line Math Block Accumulation (\[ ... \] or $$ ... $$ or \begin{array})
-    if (inMathBlock) {
+    // Accumulate multi-line display math
+    if (inDisplayMath) {
       mathBuffer.push(trimmed);
       if (trimmed.includes('\\]') || trimmed.includes('$$') || trimmed.includes('\\end{array}')) {
-        inMathBlock = false;
-        const fullFormula = mathBuffer.join('\n');
+        inDisplayMath = false;
+        const fullFormula = mathBuffer.join('\n').replace(/\\\[|\\\]|\$\$/g, '').trim();
         mathBuffer = [];
 
-        // Check if formula is a matrix/array table
-        if (fullFormula.includes('\\begin{array}')) {
-          checkPageBreak(140);
-          currentY += 6;
-          const tableH = renderMathArrayTable(currentCtx, fullFormula, margin, currentY, contentWidth, fontFamily);
-          currentY += tableH + 12;
-        } else {
-          // Normal display formula box
-          const cleanF = cleanMathExpression(fullFormula.replace(/\\\[|\\\]|\$\$/g, ''));
-          const fLines = wrapText(cleanF, contentWidth - 30, `bold 10pt "Cambria Math", "Times New Roman", ${fontFamily}`);
-          const boxH = Math.max(34, fLines.length * 18 + 14);
-
-          checkPageBreak(boxH + 10);
-          currentY += 6;
-
-          currentCtx.fillStyle = '#f8fafc';
-          currentCtx.strokeStyle = '#cbd5e1';
-          currentCtx.lineWidth = 1;
-          currentCtx.beginPath();
-          if (typeof (currentCtx as any).roundRect === 'function') {
-            (currentCtx as any).roundRect(margin, currentY, contentWidth, boxH, 6);
-          } else {
-            currentCtx.rect(margin, currentY, contentWidth, boxH);
-          }
-          currentCtx.fill();
-          currentCtx.stroke();
-
-          currentCtx.font = `bold 10pt "Cambria Math", "Times New Roman", ${fontFamily}`;
-          currentCtx.fillStyle = '#0284c7';
-          currentCtx.textAlign = 'center';
-          for (let fl = 0; fl < fLines.length; fl++) {
-            currentCtx.fillText(fLines[fl], pageWidth / 2, currentY + 18 + fl * 18);
-          }
-          currentCtx.textAlign = 'left';
-
-          currentY += boxH + 8;
-        }
+        const renderedMath = renderKaTeX(fullFormula, true);
+        htmlParts.push(`
+          <div class="katex-display-center text-center my-4 py-3 px-4 bg-slate-50/80 rounded-2xl border border-slate-200/70 overflow-x-auto shadow-2xs">
+            ${renderedMath}
+          </div>
+        `);
       }
       continue;
     }
 
     if (!trimmed) {
-      currentY += 4;
       continue;
     }
 
-    // Check Start of Display Math (\[ ... \] or $$ ... $$)
+    // Start of display math block
     if (trimmed.startsWith('\\[') || trimmed.startsWith('$$')) {
-      const hasClose = (trimmed.startsWith('\\[') && trimmed.includes('\\]') && trimmed.length > 3) ||
-                        (trimmed.startsWith('$$') && trimmed.endsWith('$$') && trimmed.length > 4);
+      const isSingleLine = (trimmed.startsWith('\\[') && trimmed.includes('\\]') && trimmed.length > 3) ||
+                           (trimmed.startsWith('$$') && trimmed.endsWith('$$') && trimmed.length > 4);
 
-      if (!hasClose) {
-        inMathBlock = true;
+      if (!isSingleLine) {
+        inDisplayMath = true;
         mathBuffer = [trimmed];
         continue;
       }
 
-      // Single line display math
-      const innerMath = trimmed.replace(/^(\\\[|\$\$)/, '').replace(/(\\\]|\$\$)$/, '').trim();
-      const cleanF = cleanMathExpression(innerMath);
-      const fLines = wrapText(cleanF, contentWidth - 30, `bold 10pt "Cambria Math", "Times New Roman", ${fontFamily}`);
-      const boxH = Math.max(32, fLines.length * 18 + 12);
-
-      checkPageBreak(boxH + 8);
-      currentY += 6;
-
-      currentCtx.fillStyle = '#f8fafc';
-      currentCtx.strokeStyle = '#cbd5e1';
-      currentCtx.lineWidth = 1;
-      currentCtx.beginPath();
-      if (typeof (currentCtx as any).roundRect === 'function') {
-        (currentCtx as any).roundRect(margin, currentY, contentWidth, boxH, 6);
-      } else {
-        currentCtx.rect(margin, currentY, contentWidth, boxH);
-      }
-      currentCtx.fill();
-      currentCtx.stroke();
-
-      currentCtx.font = `bold 10pt "Cambria Math", "Times New Roman", ${fontFamily}`;
-      currentCtx.fillStyle = '#0284c7';
-      currentCtx.textAlign = 'center';
-      for (let fl = 0; fl < fLines.length; fl++) {
-        currentCtx.fillText(fLines[fl], pageWidth / 2, currentY + 18 + fl * 18);
-      }
-      currentCtx.textAlign = 'left';
-
-      currentY += boxH + 8;
+      const inner = trimmed.replace(/^(\\\[|\$\$)/, '').replace(/(\\\]|\$\$)$/, '').trim();
+      const renderedMath = renderKaTeX(inner, true);
+      htmlParts.push(`
+        <div class="katex-display-center text-center my-4 py-3 px-4 bg-slate-50/80 rounded-2xl border border-slate-200/70 overflow-x-auto shadow-2xs">
+          ${renderedMath}
+        </div>
+      `);
       continue;
     }
 
-    // Horizontal Rule (--- or ***)
+    // Horizontal Rule
     if (trimmed === '---' || trimmed === '***' || trimmed === '\\hrule') {
-      checkPageBreak(14);
-      currentY += 6;
-      currentCtx.strokeStyle = '#e2e8f0';
-      currentCtx.lineWidth = 1;
-      currentCtx.beginPath();
-      currentCtx.moveTo(margin, currentY);
-      currentCtx.lineTo(pageWidth - margin, currentY);
-      currentCtx.stroke();
-      currentY += 10;
+      htmlParts.push(`<hr class="my-5 border-slate-200" />`);
       continue;
     }
 
-    // Section / Markdown Heading 1 & 2
-    if (trimmed.startsWith('\\section{') || trimmed.startsWith('# ') || trimmed.startsWith('## ')) {
-      let secTitle = '';
-      let isH1 = false;
-      if (trimmed.startsWith('\\section{')) {
-        secTitle = trimmed.replace(/^\\section\{([^}]+)\}.*/, '$1');
-        isH1 = true;
-      } else if (trimmed.startsWith('# ')) {
-        secTitle = trimmed.replace(/^#\s+/, '').replace(/\*\*/g, '');
-        isH1 = true;
-        // Skip duplicate title if already drawn in header
-        if (secTitle.toLowerCase() === docTitle.toLowerCase() && i < 5) continue;
-      } else {
-        secTitle = trimmed.replace(/^##\s+/, '').replace(/\*\*/g, '');
+    // Heading 1 (# or \section)
+    if (trimmed.startsWith('# ') || trimmed.startsWith('\\section{')) {
+      let title = trimmed.startsWith('# ')
+        ? trimmed.replace(/^#\s+/, '').replace(/\*\*/g, '')
+        : trimmed.replace(/^\\section\{([^}]+)\}.*/, '$1');
+
+      if (title.toLowerCase() === docTitle.toLowerCase() && i < 6) {
+        continue;
       }
 
-      secTitle = cleanInlineMath(secTitle);
-      checkPageBreak(36);
-      currentY += 8;
-
-      currentCtx.font = isH1 ? `bold 13pt ${fontFamily}` : `bold 11.5pt ${fontFamily}`;
-      currentCtx.fillStyle = isH1 ? '#1e3a8a' : '#1e40af';
-      const wrappedSec = wrapText(secTitle, contentWidth, currentCtx.font);
-      for (const line of wrappedSec) {
-        currentCtx.fillText(line, margin, currentY + 12);
-        currentY += 18;
-      }
-      currentY += 4;
+      htmlParts.push(`
+        <h2 class="text-lg sm:text-xl font-bold text-blue-900 border-b border-blue-100 pb-2 mt-7 mb-3 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-blue-600 inline-block"></span>
+          <span>${parseInline(title)}</span>
+        </h2>
+      `);
       continue;
     }
 
-    // Subsection / Markdown Heading 3 (###)
-    if (trimmed.startsWith('\\subsection{') || trimmed.startsWith('### ')) {
-      let subTitle = '';
-      if (trimmed.startsWith('\\subsection{')) {
-        subTitle = trimmed.replace(/^\\subsection\{([^}]+)\}.*/, '$1');
-      } else {
-        subTitle = trimmed.replace(/^###\s+/, '').replace(/\*\*/g, '');
-      }
+    // Heading 2 (## or \subsection)
+    if (trimmed.startsWith('## ') || trimmed.startsWith('\\subsection{')) {
+      const title = trimmed.startsWith('## ')
+        ? trimmed.replace(/^##\s+/, '').replace(/\*\*/g, '')
+        : trimmed.replace(/^\\subsection\{([^}]+)\}.*/, '$1');
 
-      subTitle = cleanInlineMath(subTitle);
-      checkPageBreak(28);
-      currentY += 6;
-
-      currentCtx.font = `bold 10.5pt ${fontFamily}`;
-      currentCtx.fillStyle = '#0f172a';
-      const wrappedSub = wrapText(subTitle, contentWidth, currentCtx.font);
-      for (const line of wrappedSub) {
-        currentCtx.fillText(line, margin, currentY + 11);
-        currentY += 16;
-      }
-      currentY += 4;
+      htmlParts.push(`
+        <h3 class="text-base sm:text-lg font-bold text-blue-800 mt-5 mb-2.5">
+          ${parseInline(title)}
+        </h3>
+      `);
       continue;
     }
 
-    // Markdown Blockquote (> ...)
+    // Heading 3 (### or \subsubsection)
+    if (trimmed.startsWith('### ') || trimmed.startsWith('\\subsubsection{')) {
+      const title = trimmed.startsWith('### ')
+        ? trimmed.replace(/^###\s+/, '').replace(/\*\*/g, '')
+        : trimmed.replace(/^\\subsubsection\{([^}]+)\}.*/, '$1');
+
+      htmlParts.push(`
+        <h4 class="text-sm sm:text-base font-semibold text-slate-900 mt-4 mb-2">
+          ${parseInline(title)}
+        </h4>
+      `);
+      continue;
+    }
+
+    // Blockquote (> ...)
     if (trimmed.startsWith('>')) {
-      const quoteText = cleanInlineMath(trimmed.replace(/^>\s*/, '').replace(/\*+/g, ''));
-      const wrappedQ = wrapText(quoteText, contentWidth - 24, `italic 9.5pt ${fontFamily}`);
-      const quoteH = wrappedQ.length * 15 + 10;
-
-      checkPageBreak(quoteH + 6);
-      currentY += 4;
-
-      currentCtx.fillStyle = '#f8fafc';
-      currentCtx.fillRect(margin, currentY, contentWidth, quoteH);
-
-      currentCtx.fillStyle = '#6366f1';
-      currentCtx.fillRect(margin, currentY, 3, quoteH);
-
-      currentCtx.font = `italic 9.5pt ${fontFamily}`;
-      currentCtx.fillStyle = '#475569';
-      for (let q = 0; q < wrappedQ.length; q++) {
-        currentCtx.fillText(wrappedQ[q], margin + 12, currentY + 12 + q * 15);
-      }
-
-      currentY += quoteH + 6;
+      const quote = trimmed.replace(/^>\s*/, '');
+      htmlParts.push(`
+        <blockquote class="border-l-4 border-indigo-500 bg-indigo-50/50 px-4 py-2.5 my-3 text-slate-700 rounded-r-xl italic text-xs sm:text-sm">
+          ${parseInline(quote)}
+        </blockquote>
+      `);
       continue;
     }
 
     // List item (*, -, \item)
-    if (trimmed.startsWith('\\item') || trimmed.startsWith('* ') || trimmed.startsWith('- ') || rawLine.match(/^\s+[*•-]/)) {
+    if (trimmed.startsWith('* ') || trimmed.startsWith('- ') || trimmed.startsWith('\\item') || rawLine.match(/^\s+[*•-]/)) {
       const isNested = rawLine.startsWith('  ') || rawLine.startsWith('\t');
-      const itemRaw = trimmed.replace(/^(\\item|\*|-|•)\s*/, '');
-      const itemClean = cleanInlineMath(itemRaw).replace(/\*\*([^*]+)\*\*/g, '$1');
-      const itemMargin = isNested ? margin + 24 : margin + 10;
-      const wrappedItem = wrapText(itemClean, contentWidth - (isNested ? 30 : 16), `9.5pt ${fontFamily}`);
+      const itemText = trimmed.replace(/^(\*|-|•|\\item)\s*/, '');
 
-      checkPageBreak(wrappedItem.length * 15 + 4);
-
-      currentCtx.font = `bold 10pt ${fontFamily}`;
-      currentCtx.fillStyle = isNested ? '#64748b' : '#2563eb';
-      currentCtx.fillText(isNested ? '–' : '•', itemMargin - 10, currentY + 10);
-
-      currentCtx.font = `9.5pt ${fontFamily}`;
-      currentCtx.fillStyle = '#334155';
-      for (let it = 0; it < wrappedItem.length; it++) {
-        currentCtx.fillText(wrappedItem[it], itemMargin, currentY + 10);
-        currentY += 15;
-      }
-      currentY += 2;
+      htmlParts.push(`
+        <div class="${isNested ? 'ml-7' : 'ml-2'} flex items-start gap-2.5 my-1.5 text-xs sm:text-sm text-slate-700">
+          <span class="${isNested ? 'text-slate-400 font-bold' : 'text-blue-600 font-extrabold'} select-none shrink-0 mt-0.5">
+            ${isNested ? '–' : '•'}
+          </span>
+          <div class="flex-1 leading-relaxed">
+            ${parseInline(itemText)}
+          </div>
+        </div>
+      `);
       continue;
     }
 
-    // Ignore environment boundaries
+    // Ignore raw environment tags
     if (trimmed.startsWith('\\begin{') || trimmed.startsWith('\\end{')) {
       continue;
     }
 
-    // Regular Paragraph
-    const cleanPara = cleanInlineMath(trimmed)
-      .replace(/\\textbf\{([^}]+)\}/g, '$1')
-      .replace(/\\textit\{([^}]+)\}/g, '$1')
-      .replace(/\*\*([^*]+)\*\*/g, '$1');
-
-    const wrappedP = wrapText(cleanPara, contentWidth, `9.5pt ${fontFamily}`);
-    checkPageBreak(wrappedP.length * 15 + 4);
-
-    currentCtx.font = `9.5pt ${fontFamily}`;
-    currentCtx.fillStyle = '#334155';
-    for (const line of wrappedP) {
-      currentCtx.fillText(line, margin, currentY + 10);
-      currentY += 15;
-    }
-    currentY += 4;
+    // Normal paragraph
+    htmlParts.push(`
+      <p class="my-2.5 text-xs sm:text-sm text-slate-700 leading-relaxed">
+        ${parseInline(trimmed)}
+      </p>
+    `);
   }
 
-  // Draw footer on last page
-  currentCtx.font = `9pt ${fontFamily}`;
-  currentCtx.fillStyle = '#94a3b8';
-  currentCtx.textAlign = 'center';
-  currentCtx.fillText(`Trang ${pageNumber}`, pageWidth / 2, pageHeight - margin / 2);
-  currentCtx.textAlign = 'left';
-
-  canvases.push(currentCanvas);
-  return canvases;
+  return `
+    <div class="docflow-math-document p-6 sm:p-10 max-w-4xl mx-auto bg-white text-slate-900 font-sans leading-relaxed selection:bg-blue-100">
+      ${htmlParts.join('\n')}
+    </div>
+  `;
 }
 
 /**
- * Compiles LaTeX source code or Math Markdown to a standardized PDF document with full Vietnamese Unicode preservation
+ * Compiles LaTeX source code or Math Markdown to a standardized PDF document
  */
 export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
-  const titleMatch = code.match(/\\title\{([^}]+)\}/);
-  const authorMatch = code.match(/\\author\{([^}]+)\}/);
-  const dateMatch = code.match(/\\date\{([^}]+)\}/);
-
-  const rawTitle = titleMatch ? titleMatch[1].trim() : 'Tài liệu LaTeX';
-  const rawAuthor = authorMatch ? authorMatch[1].trim() : '';
-  const rawDate = dateMatch ? dateMatch[1].trim() : '';
-
-  // 1. Browser runtime: High-resolution Canvas rendering retaining 100% Vietnamese diacritics
+  // 1. Browser runtime: High-resolution Canvas rendering retaining 100% Vietnamese and KaTeX Math
   if (typeof document !== 'undefined') {
-    const canvases = renderLatexPagesToCanvas(code, {
-      title: rawTitle,
-      author: rawAuthor,
-      date: rawDate,
-    });
+    const htmlContent = convertLatexToHtml(code);
 
-    const pdfDoc = await PDFDocument.create();
+    const container = document.createElement('div');
+    container.style.position = 'fixed';
+    container.style.top = '-10000px';
+    container.style.left = '-10000px';
+    container.style.width = '794px'; // A4 width at 96 DPI
+    container.style.backgroundColor = '#ffffff';
+    container.style.color = '#0f172a';
+    container.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+    container.innerHTML = htmlContent;
 
-    for (const canvas of canvases) {
-      const dataUrl = canvas.toDataURL('image/png');
-      const response = await fetch(dataUrl);
-      const arrayBuffer = await response.arrayBuffer();
-      const pngImage = await pdfDoc.embedPng(new Uint8Array(arrayBuffer));
-      const page = pdfDoc.addPage([595.28, 841.89]);
-      page.drawImage(pngImage, {
-        x: 0,
-        y: 0,
-        width: 595.28,
-        height: 841.89,
+    document.body.appendChild(container);
+
+    try {
+      // Allow fonts and math to settle
+      await new Promise((r) => setTimeout(r, 60));
+
+      const fullCanvas = await html2canvas(container, {
+        scale: 2, // 2x Retina resolution for sharp formulas
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
       });
-    }
 
-    return await pdfDoc.save();
+      const pdfDoc = await PDFDocument.create();
+      const a4WidthPt = 595.28;
+      const a4HeightPt = 841.89;
+
+      const pageCanvasHeight = Math.round(fullCanvas.width * (a4HeightPt / a4WidthPt));
+      const totalPages = Math.max(1, Math.ceil(fullCanvas.height / pageCanvasHeight));
+
+      for (let p = 0; p < totalPages; p++) {
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = fullCanvas.width;
+        pageCanvas.height = pageCanvasHeight;
+        const pageCtx = pageCanvas.getContext('2d')!;
+
+        pageCtx.fillStyle = '#ffffff';
+        pageCtx.fillRect(0, 0, pageCanvas.width, pageCanvasHeight);
+
+        const srcY = p * pageCanvasHeight;
+        const srcH = Math.min(pageCanvasHeight, fullCanvas.height - srcY);
+
+        pageCtx.drawImage(
+          fullCanvas,
+          0,
+          srcY,
+          fullCanvas.width,
+          srcH,
+          0,
+          0,
+          fullCanvas.width,
+          srcH
+        );
+
+        // Footer page numbers
+        pageCtx.font = '22px sans-serif';
+        pageCtx.fillStyle = '#94a3b8';
+        pageCtx.textAlign = 'center';
+        pageCtx.fillText(`Trang ${p + 1} / ${totalPages}`, pageCanvas.width / 2, pageCanvasHeight - 20);
+
+        const dataUrl = pageCanvas.toDataURL('image/png');
+        const imgBytes = await (await fetch(dataUrl)).arrayBuffer();
+        const pngImage = await pdfDoc.embedPng(new Uint8Array(imgBytes));
+
+        const pdfPage = pdfDoc.addPage([a4WidthPt, a4HeightPt]);
+        pdfPage.drawImage(pngImage, {
+          x: 0,
+          y: 0,
+          width: a4WidthPt,
+          height: a4HeightPt,
+        });
+      }
+
+      return await pdfDoc.save();
+    } finally {
+      document.body.removeChild(container);
+    }
   }
 
   // 2. Headless fallback for Node environments (test suites)
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const fontItalic = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
 
   const pageWidth = 595.28;
   const pageHeight = 841.89;
@@ -761,29 +512,19 @@ export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
   let currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
   let y = pageHeight - margin;
 
+  const titleMatch = code.match(/\\title\{([^}]+)\}/);
+  const rawTitle = titleMatch ? titleMatch[1] : 'Tai lieu LaTeX';
   const title = removeDiacritics(rawTitle);
-  const author = removeDiacritics(rawAuthor);
 
   if (title) {
     currentPage.drawText(title, {
       x: margin,
       y: y,
-      size: 20,
+      size: 18,
       font: fontBold,
       color: rgb(0.1, 0.15, 0.25),
     });
-    y -= 26;
-  }
-
-  if (author) {
-    currentPage.drawText(`Author: ${author}`, {
-      x: margin,
-      y: y,
-      size: 11,
-      font: fontItalic,
-      color: rgb(0.35, 0.4, 0.48),
-    });
-    y -= 22;
+    y -= 30;
   }
 
   const lines = code.split('\n');
@@ -795,7 +536,7 @@ export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
       currentPage.drawText(removeDiacritics(secTitle), {
         x: margin,
         y: y,
-        size: 14,
+        size: 13,
         font: fontBold,
         color: rgb(0.1, 0.3, 0.6),
       });
@@ -858,7 +599,7 @@ export async function compileLatexToWord(code: string): Promise<Blob> {
     if (trimmed.includes('\\end{document}')) break;
     if (!inDocument) continue;
 
-    // Heading 1 & Section
+    // Heading 1
     if (trimmed.startsWith('\\section{') || trimmed.startsWith('# ') || trimmed.startsWith('## ')) {
       let sec = '';
       if (trimmed.startsWith('\\section{')) {
@@ -879,7 +620,7 @@ export async function compileLatexToWord(code: string): Promise<Blob> {
       continue;
     }
 
-    // Heading 2 & Subsection
+    // Heading 2
     if (trimmed.startsWith('\\subsection{') || trimmed.startsWith('### ')) {
       let sub = '';
       if (trimmed.startsWith('\\subsection{')) {
@@ -897,7 +638,7 @@ export async function compileLatexToWord(code: string): Promise<Blob> {
       continue;
     }
 
-    // Display Math formulas
+    // Display Math
     if (trimmed.startsWith('\\[') || trimmed.startsWith('$$')) {
       const eq = trimmed.replace(/^(\\\[|\$\$)/, '').replace(/(\\\]|\$\$)$/, '').trim();
       paragraphs.push(
@@ -946,4 +687,3 @@ export async function compileLatexToWord(code: string): Promise<Blob> {
 
   return await Packer.toBlob(doc);
 }
-
