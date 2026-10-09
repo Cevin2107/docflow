@@ -1,0 +1,152 @@
+import { ToolType } from './document';
+
+export interface ToolMeta {
+  id: ToolType;
+  title: string;
+  shortDesc: string;
+  category: 'organize' | 'convert' | 'edit-sign' | 'optimize';
+  badge?: string;
+  iconName: string;
+  popular?: boolean;
+  supportedInputs: string[];
+  outputFormat: string;
+}
+
+export const TOOLS_REGISTRY: ToolMeta[] = [
+  {
+    id: 'merge',
+    title: 'Ghép PDF (Merge)',
+    shortDesc: 'Kết hợp nhiều tài liệu PDF theo thứ tự tùy chỉnh thành một tệp duy nhất.',
+    category: 'organize',
+    badge: 'Phổ biến',
+    iconName: 'Combine',
+    popular: true,
+    supportedInputs: ['application/pdf'],
+    outputFormat: 'PDF',
+  },
+  {
+    id: 'split',
+    title: 'Chia PDF (Split & Groups)',
+    shortDesc: 'Chia tách PDF theo trang đơn, khoảng trang hoặc gom nhóm nhiều PDF tùy chỉnh.',
+    category: 'organize',
+    badge: 'Nâng cao',
+    iconName: 'Split',
+    popular: true,
+    supportedInputs: ['application/pdf'],
+    outputFormat: 'PDF / ZIP',
+  },
+  {
+    id: 'compress',
+    title: 'Nén PDF (Compress)',
+    shortDesc: 'Giảm dung lượng tệp PDF với 3 chế độ nén thông minh giữ nguyên độ sắc nét.',
+    category: 'optimize',
+    badge: 'Nhanh chóng',
+    iconName: 'FileArchive',
+    popular: true,
+    supportedInputs: ['application/pdf'],
+    outputFormat: 'PDF',
+  },
+  {
+    id: 'sign',
+    title: 'Ký tên PDF (Sign)',
+    shortDesc: 'Vẽ chữ ký, gõ tên theo font viết tay nghệ thuật hoặc tải ảnh chữ ký lên.',
+    category: 'edit-sign',
+    badge: 'Bảo mật',
+    iconName: 'FileSignature',
+    popular: true,
+    supportedInputs: ['application/pdf'],
+    outputFormat: 'PDF',
+  },
+  {
+    id: 'latex',
+    title: 'Biên dịch LaTeX (LaTeX Converter)',
+    shortDesc: 'Trình soạn thảo LaTeX trực quan, compile ra PDF và chuyển đổi sang Word DOCX.',
+    category: 'convert',
+    badge: 'Mới',
+    iconName: 'Code2',
+    popular: true,
+    supportedInputs: ['text/x-tex', 'text/plain'],
+    outputFormat: 'PDF / DOCX',
+  },
+  {
+    id: 'pdf-to-word',
+    title: 'PDF sang Word (PDF to Word)',
+    shortDesc: 'Trích xuất văn bản, bảng biểu và cấu trúc tài liệu PDF sang tệp Word (.docx).',
+    category: 'convert',
+    badge: 'Cần thiết',
+    iconName: 'FileType2',
+    popular: true,
+    supportedInputs: ['application/pdf'],
+    outputFormat: 'DOCX',
+  },
+  {
+    id: 'edit',
+    title: 'Chỉnh sửa & Che dữ liệu (Edit & Redact)',
+    shortDesc: 'Thêm ghi chú, hình khối và che thông tin nhạy cảm (Redaction) thực sự khỏi tệp.',
+    category: 'edit-sign',
+    iconName: 'PenLine',
+    popular: false,
+    supportedInputs: ['application/pdf'],
+    outputFormat: 'PDF',
+  },
+  {
+    id: 'protect',
+    title: 'Bảo vệ & Làm phẳng (Protect & Flatten)',
+    shortDesc: 'Đặt mật khẩu tài liệu, làm phẳng form annotation và loại bỏ metadata ẩn.',
+    category: 'optimize',
+    iconName: 'Lock',
+    popular: false,
+    supportedInputs: ['application/pdf'],
+    outputFormat: 'PDF',
+  },
+  {
+    id: 'pdf-to-image',
+    title: 'PDF sang Ảnh (PNG / JPG / WebP)',
+    shortDesc: 'Trích xuất các trang tài liệu thành hình ảnh độ phân giải cao và tải về dưới dạng ZIP.',
+    category: 'convert',
+    iconName: 'Image',
+    popular: true,
+    supportedInputs: ['application/pdf'],
+    outputFormat: 'PNG / JPG / ZIP',
+  },
+  {
+    id: 'image-to-pdf',
+    title: 'Ảnh sang PDF (Image to PDF)',
+    shortDesc: 'Chuyển đổi các hình ảnh PNG, JPG, WebP thành tài liệu PDF chuẩn hóa.',
+    category: 'convert',
+    iconName: 'FileImage',
+    popular: false,
+    supportedInputs: ['image/png', 'image/jpeg', 'image/webp'],
+    outputFormat: 'PDF',
+  },
+  {
+    id: 'page-numbers',
+    title: 'Đánh số trang (Page Numbers)',
+    shortDesc: 'Chèn số trang tự động vào chân hoặc đầu trang với định dạng tùy chỉnh linh hoạt.',
+    category: 'edit-sign',
+    iconName: 'Hash',
+    popular: false,
+    supportedInputs: ['application/pdf'],
+    outputFormat: 'PDF',
+  },
+  {
+    id: 'watermark',
+    title: 'Chèn Watermark (Đóng dấu mờ)',
+    shortDesc: 'Đóng dấu bản quyền chữ nghiêng, bảo mật tài liệu chống sao chép trái phép.',
+    category: 'edit-sign',
+    iconName: 'Stamp',
+    popular: false,
+    supportedInputs: ['application/pdf'],
+    outputFormat: 'PDF',
+  },
+  {
+    id: 'remove-blank',
+    title: 'Xóa trang trắng (Remove Blank Pages)',
+    shortDesc: 'Tự động phát hiện và loại bỏ các trang trống không có nội dung trong PDF.',
+    category: 'organize',
+    iconName: 'FileMinus',
+    popular: false,
+    supportedInputs: ['application/pdf'],
+    outputFormat: 'PDF',
+  },
+];
