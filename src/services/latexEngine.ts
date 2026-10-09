@@ -100,13 +100,9 @@ Viết đoạn mã mô phỏng thuật toán phát hiện trang trắng dựa tr
 \\end{document}`,
 };
 
-/**
- * Fallback string cleaner for Word export and plain text
- */
 export function cleanMathExpression(expr: string): string {
   if (!expr) return '';
   let s = expr;
-
   s = s.replace(/\\alpha/g, 'α');
   s = s.replace(/\\beta/g, 'β');
   s = s.replace(/\\gamma/g, 'γ');
@@ -151,9 +147,6 @@ export function cleanInlineMath(text: string): string {
   return res;
 }
 
-/**
- * Validates LaTeX source code
- */
 export function validateLatexSyntax(code: string): LatexCompileError[] {
   const errors: LatexCompileError[] = [];
   const lines = code.split('\n');
@@ -180,7 +173,7 @@ export function validateLatexSyntax(code: string): LatexCompileError[] {
 }
 
 /**
- * Safely renders LaTeX math using KaTeX with fallback
+ * Safely renders LaTeX math using KaTeX with output='html' to prevent MathML duplicate text artifacts
  */
 function renderKaTeX(formula: string, displayMode: boolean): string {
   try {
@@ -188,10 +181,244 @@ function renderKaTeX(formula: string, displayMode: boolean): string {
       displayMode,
       throwOnError: false,
       strict: false,
+      output: 'html', // Pure HTML output prevents double overlapping text in html2canvas
     });
   } catch {
     return `<span class="katex-fallback font-mono text-blue-700">${formula}</span>`;
   }
+}
+
+/**
+ * Parses inline formatting: Math \( ... \) or $ ... $, bold **...**, italic *...*
+ */
+function parseInlineContent(text: string): string {
+  if (!text) return '';
+  // 1. Double backslash inline math \\( ... \\)
+  let parsed = text.replace(/\\\\\((.*?)\\\\\)/g, (_, m) => renderKaTeX(m, false));
+  // 2. Standard inline math \( ... \)
+  parsed = parsed.replace(/\\\((.*?)\\\)/g, (_, m) => renderKaTeX(m, false));
+  // 3. Single dollar math $ ... $
+  parsed = parsed.replace(/\$([^$]+)\$/g, (_, m) => renderKaTeX(m, false));
+  // 4. Bold **...**
+  parsed = parsed.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-bold text-slate-900">$1</strong>');
+  // 5. Italic *...*
+  parsed = parsed.replace(/\*([^*]+)\*/g, '<em class="italic text-slate-700">$1</em>');
+  return parsed;
+}
+
+export interface DocumentBlock {
+  type: 'h1' | 'h2' | 'h3' | 'hr' | 'display-math' | 'blockquote' | 'list-item' | 'paragraph';
+  content: string;
+  isNested?: boolean;
+  innerBlocks?: DocumentBlock[];
+}
+
+/**
+ * Hierarchical document block tokenizer for freeform LaTeX and Markdown Math
+ */
+export function parseDocumentBlocks(rawLines: string[]): DocumentBlock[] {
+  const blocks: DocumentBlock[] = [];
+  let i = 0;
+
+  while (i < rawLines.length) {
+    const rawLine = rawLines[i];
+    const trimmed = rawLine.trim();
+
+    if (!trimmed) {
+      i++;
+      continue;
+    }
+
+    // Ignore formal document tags
+    if (trimmed.includes('\\begin{document}') || trimmed.includes('\\end{document}') ||
+        trimmed === '\\maketitle' || trimmed.startsWith('\\documentclass')) {
+      i++;
+      continue;
+    }
+
+    // 1. Display Math block (\[ ... \] or $$ ... $$)
+    if (trimmed.startsWith('\\[') || trimmed.startsWith('$$')) {
+      const isSingleLine = (trimmed.startsWith('\\[') && trimmed.includes('\\]') && trimmed.length > 3) ||
+                           (trimmed.startsWith('$$') && trimmed.endsWith('$$') && trimmed.length > 4);
+
+      if (isSingleLine) {
+        const inner = trimmed.replace(/^(\\\[|\$\$)/, '').replace(/(\\\]|\$\$)$/, '').trim();
+        blocks.push({ type: 'display-math', content: inner });
+        i++;
+        continue;
+      }
+
+      // Collect multi-line math block
+      const mathLines = [trimmed];
+      i++;
+      while (i < rawLines.length) {
+        const line = rawLines[i].trim();
+        mathLines.push(line);
+        i++;
+        if (line.includes('\\]') || line.includes('$$') || line.includes('\\end{array}')) {
+          break;
+        }
+      }
+      const fullMath = mathLines.join('\n').replace(/^(\\\[|\$\$)/, '').replace(/(\\\]|\$\$)$/, '').trim();
+      blocks.push({ type: 'display-math', content: fullMath });
+      continue;
+    }
+
+    // 2. Blockquote (> ...) - Collect all consecutive lines and parse recursively
+    if (trimmed.startsWith('>')) {
+      const quoteLines: string[] = [];
+      while (i < rawLines.length) {
+        const line = rawLines[i].trim();
+        if (line.startsWith('>') || (quoteLines.length > 0 && (rawLines[i].startsWith('   ') || rawLines[i].startsWith('\t')))) {
+          const stripped = line.startsWith('>') ? line.replace(/^>\s?/, '') : line.trim();
+          quoteLines.push(stripped);
+          i++;
+        } else if (line === '') {
+          if (i + 1 < rawLines.length && rawLines[i + 1].trim().startsWith('>')) {
+            quoteLines.push('');
+            i++;
+          } else {
+            break;
+          }
+        } else {
+          break;
+        }
+      }
+
+      const innerQuoteBlocks = parseDocumentBlocks(quoteLines);
+      blocks.push({ type: 'blockquote', content: '', innerBlocks: innerQuoteBlocks });
+      continue;
+    }
+
+    // 3. Horizontal Rule
+    if (trimmed === '---' || trimmed === '***' || trimmed === '\\hrule') {
+      blocks.push({ type: 'hr', content: '' });
+      i++;
+      continue;
+    }
+
+    // 4. Headings
+    if (trimmed.startsWith('# ') || trimmed.startsWith('\\section{')) {
+      const text = trimmed.startsWith('# ')
+        ? trimmed.replace(/^#\s+/, '').replace(/\*\*/g, '')
+        : trimmed.replace(/^\\section\{([^}]+)\}.*/, '$1');
+      blocks.push({ type: 'h1', content: text });
+      i++;
+      continue;
+    }
+
+    if (trimmed.startsWith('## ') || trimmed.startsWith('\\subsection{')) {
+      const text = trimmed.startsWith('## ')
+        ? trimmed.replace(/^##\s+/, '').replace(/\*\*/g, '')
+        : trimmed.replace(/^\\subsection\{([^}]+)\}.*/, '$1');
+      blocks.push({ type: 'h2', content: text });
+      i++;
+      continue;
+    }
+
+    if (trimmed.startsWith('### ') || trimmed.startsWith('\\subsubsection{')) {
+      const text = trimmed.startsWith('### ')
+        ? trimmed.replace(/^###\s+/, '').replace(/\*\*/g, '')
+        : trimmed.replace(/^\\subsubsection\{([^}]+)\}.*/, '$1');
+      blocks.push({ type: 'h3', content: text });
+      i++;
+      continue;
+    }
+
+    // 5. List items
+    if (trimmed.startsWith('* ') || trimmed.startsWith('- ') || trimmed.startsWith('\\item') || rawLine.match(/^\s+[*•-]/)) {
+      const isNested = rawLine.startsWith('  ') || rawLine.startsWith('\t');
+      const itemText = trimmed.replace(/^(\*|-|•|\\item)\s*/, '');
+      blocks.push({ type: 'list-item', content: itemText, isNested });
+      i++;
+      continue;
+    }
+
+    // 6. Regular paragraph
+    blocks.push({ type: 'paragraph', content: trimmed });
+    i++;
+  }
+
+  return blocks;
+}
+
+/**
+ * Converts a list of DocumentBlocks to clean HTML
+ */
+function renderBlocksToHtml(blocks: DocumentBlock[]): string {
+  const parts: string[] = [];
+
+  for (const block of blocks) {
+    switch (block.type) {
+      case 'h1':
+        parts.push(`
+          <h2 class="text-xl sm:text-2xl font-extrabold text-blue-900 border-b-2 border-blue-200 pb-2 mt-8 mb-4 text-center">
+            ${parseInlineContent(block.content)}
+          </h2>
+        `);
+        break;
+
+      case 'h2':
+        parts.push(`
+          <h3 class="text-lg sm:text-xl font-bold text-blue-800 border-b border-slate-200 pb-1.5 mt-6 mb-3 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-blue-600 shrink-0"></span>
+            <span>${parseInlineContent(block.content)}</span>
+          </h3>
+        `);
+        break;
+
+      case 'h3':
+        parts.push(`
+          <h4 class="text-base sm:text-lg font-bold text-slate-800 mt-4 mb-2">
+            ${parseInlineContent(block.content)}
+          </h4>
+        `);
+        break;
+
+      case 'hr':
+        parts.push(`<hr class="my-5 border-slate-200" />`);
+        break;
+
+      case 'display-math':
+        parts.push(`
+          <div class="katex-display-center text-center my-4 py-3 px-4 bg-slate-50/90 rounded-2xl border border-slate-200/80 shadow-2xs overflow-x-auto">
+            ${renderKaTeX(block.content, true)}
+          </div>
+        `);
+        break;
+
+      case 'blockquote':
+        parts.push(`
+          <div class="my-4 border-l-4 border-indigo-500 bg-indigo-50/60 p-4 pl-5 rounded-r-2xl shadow-2xs space-y-2">
+            ${block.innerBlocks ? renderBlocksToHtml(block.innerBlocks) : ''}
+          </div>
+        `);
+        break;
+
+      case 'list-item':
+        parts.push(`
+          <div class="${block.isNested ? 'ml-7' : 'ml-2'} flex items-start gap-2.5 my-1.5 text-xs sm:text-sm text-slate-700 leading-relaxed">
+            <span class="${block.isNested ? 'text-slate-400 font-bold' : 'text-blue-600 font-extrabold'} select-none shrink-0 mt-0.5">
+              ${block.isNested ? '–' : '•'}
+            </span>
+            <div class="flex-1">
+              ${parseInlineContent(block.content)}
+            </div>
+          </div>
+        `);
+        break;
+
+      case 'paragraph':
+        parts.push(`
+          <p class="my-2.5 text-xs sm:text-sm text-slate-700 leading-relaxed">
+            ${parseInlineContent(block.content)}
+          </p>
+        `);
+        break;
+    }
+  }
+
+  return parts.join('\n');
 }
 
 /**
@@ -200,17 +427,9 @@ function renderKaTeX(formula: string, displayMode: boolean): string {
 export function convertLatexToHtml(rawCode: string): string {
   if (!rawCode) return '';
 
-  // 1. Normalize escaped backslashes (\\( -> \(, \\[ -> \[, etc.)
+  // Normalize escaped backslashes in math delimiters (\\( -> \(, \\[ -> \[, etc.)
   let code = rawCode.replace(/\\\\([()[\]])/g, '\\$1');
 
-  const lines = code.split('\n');
-  const htmlParts: string[] = [];
-
-  let inDocument = !code.includes('\\begin{document}');
-  let inDisplayMath = false;
-  let mathBuffer: string[] = [];
-
-  // Extract metadata
   const titleMatch = code.match(/\\title\{([^}]+)\}/);
   const authorMatch = code.match(/\\author\{([^}]+)\}/);
   const dateMatch = code.match(/\\date\{([^}]+)\}/);
@@ -220,211 +439,58 @@ export function convertLatexToHtml(rawCode: string): string {
   const docAuthor = authorMatch ? authorMatch[1] : '';
   const docDate = dateMatch ? (dateMatch[1] === '\\today' ? new Date().toLocaleDateString('vi-VN') : dateMatch[1]) : '';
 
-  // Render Document Header
-  if (docTitle) {
-    htmlParts.push(`
-      <header class="doc-header pb-4 mb-6 border-b-2 border-slate-200 text-center">
-        <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight mb-2">${docTitle}</h1>
-        ${(docAuthor || docDate) ? `
-          <div class="text-xs sm:text-sm font-medium text-slate-500 flex items-center justify-center gap-3">
-            ${docAuthor ? `<span>Tác giả: <strong class="text-slate-700 font-semibold">${docAuthor}</strong></span>` : ''}
-            ${(docAuthor && docDate) ? `<span>•</span>` : ''}
-            ${docDate ? `<span>Ngày: ${docDate}</span>` : ''}
-          </div>
-        ` : ''}
-      </header>
-    `);
-  }
+  const lines = code.split('\n');
+  const blocks = parseDocumentBlocks(lines);
 
-  function parseInline(text: string): string {
-    // 1. Parse inline math \( ... \)
-    let parsed = text.replace(/\\\((.*?)\\\)/g, (_, m) => renderKaTeX(m, false));
-    // 2. Parse inline math $ ... $
-    parsed = parsed.replace(/\$([^$]+)\$/g, (_, m) => renderKaTeX(m, false));
-    // 3. Parse Markdown bold **...**
-    parsed = parsed.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-bold text-slate-900">$1</strong>');
-    // 4. Parse Markdown italic *...*
-    parsed = parsed.replace(/\*([^*]+)\*/g, '<em class="italic text-slate-700">$1</em>');
-    return parsed;
-  }
-
-  for (let i = 0; i < lines.length; i++) {
-    const rawLine = lines[i];
-    const trimmed = rawLine.trim();
-
-    // LaTeX document boundaries
-    if (trimmed.includes('\\begin{document}')) {
-      inDocument = true;
-      continue;
+  // Filter out duplicate top-level title if present in blocks
+  const filteredBlocks = blocks.filter((b, idx) => {
+    if (idx < 5 && b.type === 'h1' && docTitle && b.content.toLowerCase() === docTitle.toLowerCase()) {
+      return false;
     }
-    if (trimmed.includes('\\end{document}')) {
-      break;
-    }
-    if (!inDocument && !trimmed.startsWith('\\section') && !trimmed.startsWith('#')) {
-      continue;
-    }
-    if (trimmed === '\\maketitle' || trimmed.startsWith('\\documentclass')) {
-      continue;
-    }
+    return true;
+  });
 
-    // Accumulate multi-line display math
-    if (inDisplayMath) {
-      mathBuffer.push(trimmed);
-      if (trimmed.includes('\\]') || trimmed.includes('$$') || trimmed.includes('\\end{array}')) {
-        inDisplayMath = false;
-        const fullFormula = mathBuffer.join('\n').replace(/\\\[|\\\]|\$\$/g, '').trim();
-        mathBuffer = [];
-
-        const renderedMath = renderKaTeX(fullFormula, true);
-        htmlParts.push(`
-          <div class="katex-display-center text-center my-4 py-3 px-4 bg-slate-50/80 rounded-2xl border border-slate-200/70 overflow-x-auto shadow-2xs">
-            ${renderedMath}
-          </div>
-        `);
-      }
-      continue;
-    }
-
-    if (!trimmed) {
-      continue;
-    }
-
-    // Start of display math block
-    if (trimmed.startsWith('\\[') || trimmed.startsWith('$$')) {
-      const isSingleLine = (trimmed.startsWith('\\[') && trimmed.includes('\\]') && trimmed.length > 3) ||
-                           (trimmed.startsWith('$$') && trimmed.endsWith('$$') && trimmed.length > 4);
-
-      if (!isSingleLine) {
-        inDisplayMath = true;
-        mathBuffer = [trimmed];
-        continue;
-      }
-
-      const inner = trimmed.replace(/^(\\\[|\$\$)/, '').replace(/(\\\]|\$\$)$/, '').trim();
-      const renderedMath = renderKaTeX(inner, true);
-      htmlParts.push(`
-        <div class="katex-display-center text-center my-4 py-3 px-4 bg-slate-50/80 rounded-2xl border border-slate-200/70 overflow-x-auto shadow-2xs">
-          ${renderedMath}
-        </div>
-      `);
-      continue;
-    }
-
-    // Horizontal Rule
-    if (trimmed === '---' || trimmed === '***' || trimmed === '\\hrule') {
-      htmlParts.push(`<hr class="my-5 border-slate-200" />`);
-      continue;
-    }
-
-    // Heading 1 (# or \section)
-    if (trimmed.startsWith('# ') || trimmed.startsWith('\\section{')) {
-      let title = trimmed.startsWith('# ')
-        ? trimmed.replace(/^#\s+/, '').replace(/\*\*/g, '')
-        : trimmed.replace(/^\\section\{([^}]+)\}.*/, '$1');
-
-      if (title.toLowerCase() === docTitle.toLowerCase() && i < 6) {
-        continue;
-      }
-
-      htmlParts.push(`
-        <h2 class="text-lg sm:text-xl font-bold text-blue-900 border-b border-blue-100 pb-2 mt-7 mb-3 flex items-center gap-2">
-          <span class="w-2 h-2 rounded-full bg-blue-600 inline-block"></span>
-          <span>${parseInline(title)}</span>
-        </h2>
-      `);
-      continue;
-    }
-
-    // Heading 2 (## or \subsection)
-    if (trimmed.startsWith('## ') || trimmed.startsWith('\\subsection{')) {
-      const title = trimmed.startsWith('## ')
-        ? trimmed.replace(/^##\s+/, '').replace(/\*\*/g, '')
-        : trimmed.replace(/^\\subsection\{([^}]+)\}.*/, '$1');
-
-      htmlParts.push(`
-        <h3 class="text-base sm:text-lg font-bold text-blue-800 mt-5 mb-2.5">
-          ${parseInline(title)}
-        </h3>
-      `);
-      continue;
-    }
-
-    // Heading 3 (### or \subsubsection)
-    if (trimmed.startsWith('### ') || trimmed.startsWith('\\subsubsection{')) {
-      const title = trimmed.startsWith('### ')
-        ? trimmed.replace(/^###\s+/, '').replace(/\*\*/g, '')
-        : trimmed.replace(/^\\subsubsection\{([^}]+)\}.*/, '$1');
-
-      htmlParts.push(`
-        <h4 class="text-sm sm:text-base font-semibold text-slate-900 mt-4 mb-2">
-          ${parseInline(title)}
-        </h4>
-      `);
-      continue;
-    }
-
-    // Blockquote (> ...)
-    if (trimmed.startsWith('>')) {
-      const quote = trimmed.replace(/^>\s*/, '');
-      htmlParts.push(`
-        <blockquote class="border-l-4 border-indigo-500 bg-indigo-50/50 px-4 py-2.5 my-3 text-slate-700 rounded-r-xl italic text-xs sm:text-sm">
-          ${parseInline(quote)}
-        </blockquote>
-      `);
-      continue;
-    }
-
-    // List item (*, -, \item)
-    if (trimmed.startsWith('* ') || trimmed.startsWith('- ') || trimmed.startsWith('\\item') || rawLine.match(/^\s+[*•-]/)) {
-      const isNested = rawLine.startsWith('  ') || rawLine.startsWith('\t');
-      const itemText = trimmed.replace(/^(\*|-|•|\\item)\s*/, '');
-
-      htmlParts.push(`
-        <div class="${isNested ? 'ml-7' : 'ml-2'} flex items-start gap-2.5 my-1.5 text-xs sm:text-sm text-slate-700">
-          <span class="${isNested ? 'text-slate-400 font-bold' : 'text-blue-600 font-extrabold'} select-none shrink-0 mt-0.5">
-            ${isNested ? '–' : '•'}
-          </span>
-          <div class="flex-1 leading-relaxed">
-            ${parseInline(itemText)}
-          </div>
-        </div>
-      `);
-      continue;
-    }
-
-    // Ignore raw environment tags
-    if (trimmed.startsWith('\\begin{') || trimmed.startsWith('\\end{')) {
-      continue;
-    }
-
-    // Normal paragraph
-    htmlParts.push(`
-      <p class="my-2.5 text-xs sm:text-sm text-slate-700 leading-relaxed">
-        ${parseInline(trimmed)}
-      </p>
-    `);
-  }
+  const bodyHtml = renderBlocksToHtml(filteredBlocks);
 
   return `
     <div class="docflow-math-document p-6 sm:p-10 max-w-4xl mx-auto bg-white text-slate-900 font-sans leading-relaxed selection:bg-blue-100">
-      ${htmlParts.join('\n')}
+      ${docTitle ? `
+        <header class="doc-header pb-5 mb-6 border-b-2 border-slate-200 text-center">
+          <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight mb-2">${docTitle}</h1>
+          ${(docAuthor || docDate) ? `
+            <div class="text-xs sm:text-sm font-medium text-slate-500 flex items-center justify-center gap-3">
+              ${docAuthor ? `<span>Tác giả: <strong class="text-slate-700 font-semibold">${docAuthor}</strong></span>` : ''}
+              ${(docAuthor && docDate) ? `<span>•</span>` : ''}
+              ${docDate ? `<span>Ngày: ${docDate}</span>` : ''}
+            </div>
+          ` : ''}
+        </header>
+      ` : ''}
+
+      <div class="docflow-content space-y-1">
+        ${bodyHtml}
+      </div>
     </div>
   `;
 }
 
 /**
- * Compiles LaTeX source code or Math Markdown to a standardized PDF document
+ * Compiles LaTeX source code or Math Markdown to a standardized PDF document with proper A4 margins and sharp KaTeX formulas
  */
 export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
-  // 1. Browser runtime: High-resolution Canvas rendering retaining 100% Vietnamese and KaTeX Math
+  // 1. Browser runtime: High-resolution Canvas rendering retaining 100% Vietnamese and KaTeX Math with A4 margins
   if (typeof document !== 'undefined') {
     const htmlContent = convertLatexToHtml(code);
 
+    // Create an offscreen render container with standard A4 printable proportions
+    // 794px width (A4 at 96 DPI), with 56px (~18mm) margins
     const container = document.createElement('div');
     container.style.position = 'fixed';
     container.style.top = '-10000px';
     container.style.left = '-10000px';
-    container.style.width = '794px'; // A4 width at 96 DPI
+    container.style.width = '794px';
+    container.style.boxSizing = 'border-box';
+    container.style.padding = '48px 56px'; // Proper A4 page margins (16mm top/bottom, 18mm left/right)
     container.style.backgroundColor = '#ffffff';
     container.style.color = '#0f172a';
     container.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
@@ -433,11 +499,14 @@ export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
     document.body.appendChild(container);
 
     try {
-      // Allow fonts and math to settle
-      await new Promise((r) => setTimeout(r, 60));
+      // Ensure all KaTeX fonts are completely loaded and settled before capturing
+      if ('fonts' in document) {
+        await (document as any).fonts.ready;
+      }
+      await new Promise((r) => setTimeout(r, 120));
 
       const fullCanvas = await html2canvas(container, {
-        scale: 2, // 2x Retina resolution for sharp formulas
+        scale: 2, // 2x Retina resolution for sharp equations
         useCORS: true,
         logging: false,
         backgroundColor: '#ffffff',
@@ -456,6 +525,7 @@ export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
         pageCanvas.height = pageCanvasHeight;
         const pageCtx = pageCanvas.getContext('2d')!;
 
+        // Crisp white background
         pageCtx.fillStyle = '#ffffff';
         pageCtx.fillRect(0, 0, pageCanvas.width, pageCanvasHeight);
 
@@ -474,11 +544,11 @@ export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
           srcH
         );
 
-        // Footer page numbers
+        // Footer page numbering
         pageCtx.font = '22px sans-serif';
         pageCtx.fillStyle = '#94a3b8';
         pageCtx.textAlign = 'center';
-        pageCtx.fillText(`Trang ${p + 1} / ${totalPages}`, pageCanvas.width / 2, pageCanvasHeight - 20);
+        pageCtx.fillText(`Trang ${p + 1} / ${totalPages}`, pageCanvas.width / 2, pageCanvasHeight - 24);
 
         const dataUrl = pageCanvas.toDataURL('image/png');
         const imgBytes = await (await fetch(dataUrl)).arrayBuffer();
@@ -560,19 +630,20 @@ export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
  * Converts LaTeX source or Math Markdown to a structured Word .docx document
  */
 export async function compileLatexToWord(code: string): Promise<Blob> {
-  const lines = code.split('\n');
+  const lines = code.replace(/\\\\([()[\]])/g, '\\$1').split('\n');
+  const blocks = parseDocumentBlocks(lines);
   const paragraphs: Paragraph[] = [];
 
   const titleMatch = code.match(/\\title\{([^}]+)\}/);
   const authorMatch = code.match(/\\author\{([^}]+)\}/);
   const mdTitleMatch = code.match(/^#\s+(.+)$/m);
 
-  const titleText = titleMatch ? titleMatch[1] : (mdTitleMatch ? mdTitleMatch[1].replace(/\*\*/g, '').trim() : '');
+  const docTitle = titleMatch ? titleMatch[1] : (mdTitleMatch ? mdTitleMatch[1].replace(/\*\*/g, '').trim() : '');
 
-  if (titleText) {
+  if (docTitle) {
     paragraphs.push(
       new Paragraph({
-        text: titleText,
+        text: docTitle,
         heading: HeadingLevel.TITLE,
       })
     );
@@ -587,94 +658,75 @@ export async function compileLatexToWord(code: string): Promise<Blob> {
     );
   }
 
-  let inDocument = !code.includes('\\begin{document}');
+  function addBlockToWord(b: DocumentBlock) {
+    switch (b.type) {
+      case 'h1':
+        if (docTitle && b.content.toLowerCase() === docTitle.toLowerCase()) return;
+        paragraphs.push(
+          new Paragraph({
+            text: cleanInlineMath(b.content),
+            heading: HeadingLevel.HEADING_1,
+          })
+        );
+        break;
 
-  for (const rawLine of lines) {
-    const trimmed = rawLine.trim();
+      case 'h2':
+        paragraphs.push(
+          new Paragraph({
+            text: cleanInlineMath(b.content),
+            heading: HeadingLevel.HEADING_2,
+          })
+        );
+        break;
 
-    if (trimmed.includes('\\begin{document}')) {
-      inDocument = true;
-      continue;
-    }
-    if (trimmed.includes('\\end{document}')) break;
-    if (!inDocument) continue;
+      case 'h3':
+        paragraphs.push(
+          new Paragraph({
+            text: cleanInlineMath(b.content),
+            heading: HeadingLevel.HEADING_3,
+          })
+        );
+        break;
 
-    // Heading 1
-    if (trimmed.startsWith('\\section{') || trimmed.startsWith('# ') || trimmed.startsWith('## ')) {
-      let sec = '';
-      if (trimmed.startsWith('\\section{')) {
-        sec = trimmed.replace(/^\\section\{([^}]+)\}.*/, '$1');
-      } else if (trimmed.startsWith('# ')) {
-        sec = trimmed.replace(/^#\s+/, '').replace(/\*\*/g, '');
-        if (sec.toLowerCase() === titleText.toLowerCase()) continue;
-      } else {
-        sec = trimmed.replace(/^##\s+/, '').replace(/\*\*/g, '');
-      }
+      case 'display-math':
+        paragraphs.push(
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: `[Công thức]  ${cleanMathExpression(b.content)}`,
+                bold: true,
+                color: '0369a1',
+              }),
+            ],
+          })
+        );
+        break;
 
-      paragraphs.push(
-        new Paragraph({
-          text: cleanInlineMath(sec),
-          heading: HeadingLevel.HEADING_1,
-        })
-      );
-      continue;
-    }
+      case 'blockquote':
+        if (b.innerBlocks) {
+          b.innerBlocks.forEach(addBlockToWord);
+        }
+        break;
 
-    // Heading 2
-    if (trimmed.startsWith('\\subsection{') || trimmed.startsWith('### ')) {
-      let sub = '';
-      if (trimmed.startsWith('\\subsection{')) {
-        sub = trimmed.replace(/^\\subsection\{([^}]+)\}.*/, '$1');
-      } else {
-        sub = trimmed.replace(/^###\s+/, '').replace(/\*\*/g, '');
-      }
+      case 'list-item':
+        paragraphs.push(
+          new Paragraph({
+            text: `• ${cleanInlineMath(b.content).replace(/\*\*([^*]+)\*\*/g, '$1')}`,
+          })
+        );
+        break;
 
-      paragraphs.push(
-        new Paragraph({
-          text: cleanInlineMath(sub),
-          heading: HeadingLevel.HEADING_2,
-        })
-      );
-      continue;
-    }
-
-    // Display Math
-    if (trimmed.startsWith('\\[') || trimmed.startsWith('$$')) {
-      const eq = trimmed.replace(/^(\\\[|\$\$)/, '').replace(/(\\\]|\$\$)$/, '').trim();
-      paragraphs.push(
-        new Paragraph({
-          children: [
-            new TextRun({
-              text: `[Công thức]  ${cleanMathExpression(eq)}`,
-              bold: true,
-              color: '0369a1',
-            }),
-          ],
-        })
-      );
-      continue;
-    }
-
-    // List item
-    if (trimmed.startsWith('\\item') || trimmed.startsWith('* ') || trimmed.startsWith('- ')) {
-      const item = trimmed.replace(/^(\\item|\*|-)\s*/, '');
-      paragraphs.push(
-        new Paragraph({
-          text: `• ${cleanInlineMath(item).replace(/\*\*([^*]+)\*\*/g, '$1')}`,
-        })
-      );
-      continue;
-    }
-
-    // Normal paragraph
-    if (trimmed.length > 0 && !trimmed.startsWith('\\begin') && !trimmed.startsWith('\\end') && trimmed !== '---') {
-      paragraphs.push(
-        new Paragraph({
-          text: cleanInlineMath(trimmed).replace(/\*\*([^*]+)\*\*/g, '$1'),
-        })
-      );
+      case 'paragraph':
+        paragraphs.push(
+          new Paragraph({
+            text: cleanInlineMath(b.content).replace(/\*\*([^*]+)\*\*/g, '$1'),
+          })
+        );
+        break;
     }
   }
+
+  blocks.forEach(addBlockToWord);
 
   const doc = new Document({
     sections: [

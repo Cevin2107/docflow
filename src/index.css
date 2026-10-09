@@ -32,3 +32,19 @@
   outline: 2px solid #0284c7;
   outline-offset: 2px;
 }
+
+/* KaTeX math enhancements */
+.katex-display {
+  margin: 0.6em 0 !important;
+  text-align: center !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.katex {
+  font-size: 1.05em;
+  text-rendering: geometricPrecision;
+}
+.katex-display > .katex {
+  text-align: center !important;
+}
+

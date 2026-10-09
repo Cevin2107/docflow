@@ -104,12 +104,15 @@ export const LatexTool: React.FC = () => {
           <style>
             @media print {
               body { padding: 0 !important; margin: 0 !important; }
-              @page { margin: 15mm; size: A4; }
+              @page { margin: 18mm; size: A4; }
+              .katex-display-center, .blockquote-box { break-inside: avoid !important; }
+              h1, h2, h3, h4 { break-after: avoid !important; }
             }
-            .katex-display { text-align: center !important; margin: 1.2rem 0 !important; }
+            .katex-display { text-align: center !important; margin: 0.8rem 0 !important; }
+            .katex-display-center { text-align: center !important; }
           </style>
         </head>
-        <body class="bg-white text-slate-900 font-sans p-8">
+        <body class="bg-white text-slate-900 font-sans p-6 sm:p-10">
           ${liveHtmlContent}
         </body>
       </html>
