@@ -100,56 +100,224 @@ Viết đoạn mã mô phỏng thuật toán phát hiện trang trắng dựa tr
 };
 
 /**
- * Validates LaTeX source code for common syntax issues
+ * Cleans and converts LaTeX math symbols to Unicode representations for rendering
+ */
+export function cleanMathExpression(expr: string): string {
+  if (!expr) return '';
+  let s = expr;
+
+  // Greek letters
+  s = s.replace(/\\alpha/g, 'α');
+  s = s.replace(/\\beta/g, 'β');
+  s = s.replace(/\\gamma/g, 'γ');
+  s = s.replace(/\\delta/g, 'δ');
+  s = s.replace(/\\epsilon/g, 'ε');
+  s = s.replace(/\\theta/g, 'θ');
+  s = s.replace(/\\lambda/g, 'λ');
+  s = s.replace(/\\mu/g, 'μ');
+  s = s.replace(/\\pi/g, 'π');
+  s = s.replace(/\\sigma/g, 'σ');
+  s = s.replace(/\\tau/g, 'τ');
+  s = s.replace(/\\phi/g, 'φ');
+  s = s.replace(/\\varphi/g, 'φ');
+  s = s.replace(/\\omega/g, 'ω');
+  s = s.replace(/\\Delta/g, 'Δ');
+  s = s.replace(/\\Omega/g, 'Ω');
+  s = s.replace(/\\Theta/g, 'Θ');
+
+  // Math sets
+  s = s.replace(/\\mathbb\{Z\}/g, 'ℤ');
+  s = s.replace(/\\mathbb\{R\}/g, 'ℝ');
+  s = s.replace(/\\mathbb\{N\}/g, 'ℕ');
+  s = s.replace(/\\mathbb\{Q\}/g, 'ℚ');
+  s = s.replace(/\\mathbb\{C\}/g, 'ℂ');
+
+  // Logic & Set Operators
+  s = s.replace(/\\in/g, ' ∈ ');
+  s = s.replace(/\\notin/g, ' ∉ ');
+  s = s.replace(/\\subset/g, ' ⊂ ');
+  s = s.replace(/\\subseteq/g, ' ⊆ ');
+  s = s.replace(/\\setminus/g, ' \\ ');
+  s = s.replace(/\\mid/g, ' | ');
+  s = s.replace(/\\infty/g, '∞');
+  s = s.replace(/\\pm/g, ' ± ');
+  s = s.replace(/\\mp/g, ' ∓ ');
+  s = s.replace(/\\cdot/g, ' · ');
+  s = s.replace(/\\times/g, ' × ');
+  s = s.replace(/\\div/g, ' ÷ ');
+  s = s.replace(/\\neq/g, ' ≠ ');
+  s = s.replace(/\\le\b/g, ' ≤ ');
+  s = s.replace(/\\leq\b/g, ' ≤ ');
+  s = s.replace(/\\ge\b/g, ' ≥ ');
+  s = s.replace(/\\geq\b/g, ' ≥ ');
+  s = s.replace(/\\approx/g, ' ≈ ');
+  s = s.replace(/\\equiv/g, ' ≡ ');
+  s = s.replace(/\\implies/g, ' ⟹ ');
+  s = s.replace(/\\iff/g, ' ⟺ ');
+  s = s.replace(/\\to\b/g, ' ⟶ ');
+  s = s.replace(/\\rightarrow/g, ' ⟶ ');
+  s = s.replace(/\\leftarrow/g, ' ⟵ ');
+  s = s.replace(/\\circ/g, '°');
+
+  // Spacing & accents
+  s = s.replace(/\\quad/g, '   ');
+  s = s.replace(/\\qquad/g, '      ');
+  s = s.replace(/\\,/g, ' ');
+  s = s.replace(/\\;/g, ' ');
+  s = s.replace(/\\!/g, '');
+
+  // Parentheses & brackets
+  s = s.replace(/\\left\(/g, '(');
+  s = s.replace(/\\right\)/g, ')');
+  s = s.replace(/\\left\[/g, '[');
+  s = s.replace(/\\right\]/g, ']');
+  s = s.replace(/\\left\\\{/g, '{');
+  s = s.replace(/\\right\\\}/g, '}');
+  s = s.replace(/\\left\|/g, '|');
+  s = s.replace(/\\right\|/g, '|');
+
+  // Text inside math
+  s = s.replace(/\\text\{([^}]+)\}/g, '$1');
+  s = s.replace(/\\mathrm\{([^}]+)\}/g, '$1');
+  s = s.replace(/\\mathbf\{([^}]+)\}/g, '$1');
+
+  // Trig & Functions
+  s = s.replace(/\\sin\b/g, 'sin');
+  s = s.replace(/\\cos\b/g, 'cos');
+  s = s.replace(/\\tan\b/g, 'tan');
+  s = s.replace(/\\cot\b/g, 'cot');
+  s = s.replace(/\\ln\b/g, 'ln');
+  s = s.replace(/\\log\b/g, 'log');
+  s = s.replace(/\\lim\b/g, 'lim');
+
+  // Fractions & Roots
+  s = s.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1)/($2)');
+  s = s.replace(/\\sqrt\{([^}]+)\}/g, '√($1)');
+
+  // Matrix and systems
+  s = s.replace(/\\begin\{bmatrix\}/g, '[ ');
+  s = s.replace(/\\end\{bmatrix\}/g, ' ]');
+  s = s.replace(/\\begin\{pmatrix\}/g, '( ');
+  s = s.replace(/\\end\{pmatrix\}/g, ' )');
+  s = s.replace(/\\begin\{cases\}/g, '{ ');
+  s = s.replace(/\\end\{cases\}/g, ' }');
+
+  // Clean trailing line breaks
+  s = s.replace(/\\\\/g, '   |   ');
+  s = s.replace(/\s+/g, ' ').trim();
+
+  return s;
+}
+
+/**
+ * Replaces inline math delimiters \( ... \) and $ ... $ with clean math symbols
+ */
+export function cleanInlineMath(text: string): string {
+  if (!text) return '';
+  let res = text.replace(/\\\((.*?)\\\)/g, (_, m) => cleanMathExpression(m));
+  res = res.replace(/\$([^$]+)\$/g, (_, m) => cleanMathExpression(m));
+  return res;
+}
+
+/**
+ * Validates LaTeX source code for syntax issues.
+ * Gracefully permits freeform Markdown + Math documents without forcing \documentclass.
  */
 export function validateLatexSyntax(code: string): LatexCompileError[] {
   const errors: LatexCompileError[] = [];
   const lines = code.split('\n');
 
-  if (!code.includes('\\documentclass')) {
-    errors.push({ line: 1, message: 'Thiếu khai báo \\documentclass{...}', type: 'warning' });
+  const hasDocClass = code.includes('\\documentclass');
+  const hasBeginDoc = code.includes('\\begin{document}');
+  const hasEndDoc = code.includes('\\end{document}');
+
+  // Detect if document is freeform Math/Markdown
+  const isFreeformMathDoc = !hasDocClass && (
+    code.includes('\\[') || code.includes('\\(') || code.includes('$$') ||
+    code.includes('\\begin{bmatrix}') || code.includes('\\begin{array}') ||
+    code.includes('\\sin') || code.includes('\\cos') || code.includes('\\alpha') ||
+    lines.some(l => l.trim().startsWith('#'))
+  );
+
+  if (!hasDocClass && !isFreeformMathDoc) {
+    errors.push({ line: 1, message: 'Gợi ý: Thêm khai báo \\documentclass{...} cho chuẩn LaTeX', type: 'warning' });
   }
 
-  if (code.includes('\\begin{document}') && !code.includes('\\end{document}')) {
+  if (hasBeginDoc && !hasEndDoc) {
     errors.push({ line: lines.length, message: 'Thiếu thẻ kết thúc \\end{document}', type: 'error' });
   }
-
-  // Check matched braces and environments
-  const envStack: { name: string; line: number }[] = [];
-
-  lines.forEach((lineText, idx) => {
-    const lineNum = idx + 1;
-
-    // Check open environment
-    const beginMatch = lineText.match(/\\begin\{([a-zA-Z0-9*]+)\}/);
-    if (beginMatch) {
-      envStack.push({ name: beginMatch[1], line: lineNum });
-    }
-
-    // Check close environment
-    const endMatch = lineText.match(/\\end\{([a-zA-Z0-9*]+)\}/);
-    if (endMatch) {
-      const closedName = endMatch[1];
-      if (envStack.length === 0) {
-        errors.push({ line: lineNum, message: `\\end{${closedName}} không có \\begin tương ứng`, type: 'error' });
-      } else {
-        const top = envStack.pop()!;
-        if (top.name !== closedName) {
-          errors.push({
-            line: lineNum,
-            message: `Môi trường không khớp: bắt đầu \\begin{${top.name}} ở dòng ${top.line} nhưng kết thúc \\end{${closedName}}`,
-            type: 'error',
-          });
-        }
-      }
-    }
-  });
 
   return errors;
 }
 
 /**
- * Renders LaTeX content to high-resolution Canvas pages with 100% Vietnamese Unicode support
+ * Renders a LaTeX \begin{array} table on canvas
+ */
+function renderMathArrayTable(
+  ctx: CanvasRenderingContext2D,
+  arrayStr: string,
+  startX: number,
+  startY: number,
+  maxWidth: number,
+  fontFamily: string
+): number {
+  const inner = arrayStr
+    .replace(/\\begin\{array\}\{[^}]*\}/, '')
+    .replace(/\\end\{array\}/, '')
+    .trim();
+
+  const rawRows = inner.split(/\\\\/);
+  const rows: string[][] = [];
+
+  for (const rawRow of rawRows) {
+    const cleanedRow = rawRow.replace(/\\hline/g, '').trim();
+    if (!cleanedRow) continue;
+    const cells = cleanedRow.split('&').map(c => cleanMathExpression(c.trim()));
+    if (cells.length > 0 && cells.some(c => c.length > 0)) {
+      rows.push(cells);
+    }
+  }
+
+  if (rows.length === 0) return 0;
+
+  const numCols = Math.max(...rows.map(r => r.length));
+  if (numCols === 0) return 0;
+
+  const colWidth = maxWidth / numCols;
+  const rowHeight = 24;
+  const totalHeight = rows.length * rowHeight;
+
+  ctx.save();
+  for (let r = 0; r < rows.length; r++) {
+    const y = startY + r * rowHeight;
+    const isHeader = r === 0;
+
+    for (let c = 0; c < numCols; c++) {
+      const x = startX + c * colWidth;
+      const cellText = rows[r][c] || '';
+
+      if (isHeader) {
+        ctx.fillStyle = '#f1f5f9';
+        ctx.fillRect(x, y, colWidth, rowHeight);
+      }
+
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x, y, colWidth, rowHeight);
+
+      ctx.font = (isHeader ? 'bold 8.5pt ' : '9.5pt ') + fontFamily;
+      ctx.fillStyle = isHeader ? '#1e293b' : '#334155';
+      ctx.textAlign = 'center';
+      ctx.fillText(cellText, x + colWidth / 2, y + 16);
+    }
+  }
+  ctx.restore();
+
+  return totalHeight;
+}
+
+/**
+ * Renders LaTeX & Math Markdown content to high-resolution Canvas pages with 100% Vietnamese support
  */
 function renderLatexPagesToCanvas(
   code: string,
@@ -157,7 +325,7 @@ function renderLatexPagesToCanvas(
 ): HTMLCanvasElement[] {
   const pageWidth = 595.28;
   const pageHeight = 841.89;
-  const scale = 2; // 2x Retina scale for high-DPI crisp print quality
+  const scale = 2; // Retina 2x scale for sharp print quality
   const margin = 50;
   const contentWidth = pageWidth - margin * 2;
   const fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
@@ -203,7 +371,6 @@ function renderLatexPagesToCanvas(
 
   function checkPageBreak(requiredHeight: number) {
     if (currentY + requiredHeight > pageHeight - margin - 35) {
-      // Draw page number footer
       currentCtx.font = `9pt ${fontFamily}`;
       currentCtx.fillStyle = '#94a3b8';
       currentCtx.textAlign = 'center';
@@ -220,23 +387,30 @@ function renderLatexPagesToCanvas(
     }
   }
 
-  // Render Title (Giữ nguyên tiếng Việt có dấu)
-  if (meta.title) {
-    const titleLines = wrapText(meta.title, contentWidth, `bold 18pt ${fontFamily}`);
-    currentCtx.font = `bold 18pt ${fontFamily}`;
+  // Determine Title: from meta.title or from Markdown # Title
+  let docTitle = meta.title;
+  const mdTitleMatch = code.match(/^#\s+(.+)$/m);
+  if ((!docTitle || docTitle === 'Tài liệu LaTeX') && mdTitleMatch) {
+    docTitle = mdTitleMatch[1].replace(/\*\*/g, '').trim();
+  }
+
+  // Draw Header Title
+  if (docTitle) {
+    const titleLines = wrapText(docTitle, contentWidth, `bold 17pt ${fontFamily}`);
+    currentCtx.font = `bold 17pt ${fontFamily}`;
     currentCtx.fillStyle = '#0f172a';
     for (const line of titleLines) {
       checkPageBreak(28);
-      currentCtx.fillText(line, margin, currentY + 18);
-      currentY += 26;
+      currentCtx.fillText(line, margin, currentY + 17);
+      currentY += 25;
     }
     currentY += 4;
   }
 
-  // Render Author & Date (Giữ nguyên tiếng Việt có dấu)
+  // Draw Author & Date
   if (meta.author || meta.date) {
     checkPageBreak(22);
-    currentCtx.font = `italic 10.5pt ${fontFamily}`;
+    currentCtx.font = `italic 10pt ${fontFamily}`;
     currentCtx.fillStyle = '#475569';
     const dateFormatted = meta.date === '\\today' ? new Date().toLocaleDateString('vi-VN') : meta.date;
     const subText = [
@@ -244,8 +418,8 @@ function renderLatexPagesToCanvas(
       dateFormatted ? `Ngày: ${dateFormatted}` : ''
     ].filter(Boolean).join('   •   ');
 
-    currentCtx.fillText(subText, margin, currentY + 11);
-    currentY += 20;
+    currentCtx.fillText(subText, margin, currentY + 10);
+    currentY += 18;
   }
 
   // Divider line
@@ -256,20 +430,20 @@ function renderLatexPagesToCanvas(
   currentCtx.moveTo(margin, currentY);
   currentCtx.lineTo(pageWidth - margin, currentY);
   currentCtx.stroke();
-  currentY += 20;
+  currentY += 18;
 
   const lines = code.split('\n');
-  let inDocument = false;
-  let sectionIndex = 1;
-  let subsectionIndex = 1;
+  const hasFormalDocument = code.includes('\\begin{document}');
+  let inDocument = !hasFormalDocument; // Freeform documents are parsed directly
 
-  for (const rawLine of lines) {
+  let inMathBlock = false;
+  let mathBuffer: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
     const trimmed = rawLine.trim();
-    if (!trimmed) {
-      currentY += 6;
-      continue;
-    }
 
+    // Check formal LaTeX boundaries
     if (trimmed.includes('\\begin{document}')) {
       inDocument = true;
       continue;
@@ -277,121 +451,253 @@ function renderLatexPagesToCanvas(
     if (trimmed.includes('\\end{document}')) {
       break;
     }
-    if (!inDocument && !trimmed.startsWith('\\section')) {
+    if (!inDocument && !trimmed.startsWith('\\section') && !trimmed.startsWith('#')) {
       continue;
     }
     if (trimmed === '\\maketitle' || trimmed.startsWith('\\documentclass')) {
       continue;
     }
 
-    // Section header (Giữ nguyên tiếng Việt có dấu)
-    if (trimmed.startsWith('\\section{')) {
-      const secTitle = trimmed.replace(/^\\section\{([^}]+)\}.*/, '$1');
-      subsectionIndex = 1;
-      checkPageBreak(38);
-      currentY += 10;
-      currentCtx.font = `bold 13pt ${fontFamily}`;
-      currentCtx.fillStyle = '#1d4ed8';
-      const sectionText = `${sectionIndex}. ${secTitle}`;
-      const wrappedSec = wrapText(sectionText, contentWidth, `bold 13pt ${fontFamily}`);
-      for (const line of wrappedSec) {
-        currentCtx.fillText(line, margin, currentY + 13);
-        currentY += 20;
+    // 1. Multi-line Math Block Accumulation (\[ ... \] or $$ ... $$ or \begin{array})
+    if (inMathBlock) {
+      mathBuffer.push(trimmed);
+      if (trimmed.includes('\\]') || trimmed.includes('$$') || trimmed.includes('\\end{array}')) {
+        inMathBlock = false;
+        const fullFormula = mathBuffer.join('\n');
+        mathBuffer = [];
+
+        // Check if formula is a matrix/array table
+        if (fullFormula.includes('\\begin{array}')) {
+          checkPageBreak(140);
+          currentY += 6;
+          const tableH = renderMathArrayTable(currentCtx, fullFormula, margin, currentY, contentWidth, fontFamily);
+          currentY += tableH + 12;
+        } else {
+          // Normal display formula box
+          const cleanF = cleanMathExpression(fullFormula.replace(/\\\[|\\\]|\$\$/g, ''));
+          const fLines = wrapText(cleanF, contentWidth - 30, `bold 10pt "Cambria Math", "Times New Roman", ${fontFamily}`);
+          const boxH = Math.max(34, fLines.length * 18 + 14);
+
+          checkPageBreak(boxH + 10);
+          currentY += 6;
+
+          currentCtx.fillStyle = '#f8fafc';
+          currentCtx.strokeStyle = '#cbd5e1';
+          currentCtx.lineWidth = 1;
+          currentCtx.beginPath();
+          if (typeof (currentCtx as any).roundRect === 'function') {
+            (currentCtx as any).roundRect(margin, currentY, contentWidth, boxH, 6);
+          } else {
+            currentCtx.rect(margin, currentY, contentWidth, boxH);
+          }
+          currentCtx.fill();
+          currentCtx.stroke();
+
+          currentCtx.font = `bold 10pt "Cambria Math", "Times New Roman", ${fontFamily}`;
+          currentCtx.fillStyle = '#0284c7';
+          currentCtx.textAlign = 'center';
+          for (let fl = 0; fl < fLines.length; fl++) {
+            currentCtx.fillText(fLines[fl], pageWidth / 2, currentY + 18 + fl * 18);
+          }
+          currentCtx.textAlign = 'left';
+
+          currentY += boxH + 8;
+        }
       }
-      sectionIndex++;
+      continue;
+    }
+
+    if (!trimmed) {
       currentY += 4;
       continue;
     }
 
-    // Subsection header (Giữ nguyên tiếng Việt có dấu)
-    if (trimmed.startsWith('\\subsection{')) {
-      const subTitle = trimmed.replace(/^\\subsection\{([^}]+)\}.*/, '$1');
-      checkPageBreak(30);
-      currentY += 8;
-      currentCtx.font = `bold 11pt ${fontFamily}`;
-      currentCtx.fillStyle = '#1e293b';
-      const subText = `${sectionIndex - 1}.${subsectionIndex} ${subTitle}`;
-      const wrappedSub = wrapText(subText, contentWidth, `bold 11pt ${fontFamily}`);
-      for (const line of wrappedSub) {
-        currentCtx.fillText(line, margin, currentY + 11);
-        currentY += 16;
-      }
-      subsectionIndex++;
-      currentY += 4;
-      continue;
-    }
+    // Check Start of Display Math (\[ ... \] or $$ ... $$)
+    if (trimmed.startsWith('\\[') || trimmed.startsWith('$$')) {
+      const hasClose = (trimmed.startsWith('\\[') && trimmed.includes('\\]') && trimmed.length > 3) ||
+                        (trimmed.startsWith('$$') && trimmed.endsWith('$$') && trimmed.length > 4);
 
-    // Math formula block ($$ ... $$)
-    if (trimmed.startsWith('$$') && trimmed.endsWith('$$')) {
-      const formula = trimmed.slice(2, -2).trim();
-      checkPageBreak(44);
+      if (!hasClose) {
+        inMathBlock = true;
+        mathBuffer = [trimmed];
+        continue;
+      }
+
+      // Single line display math
+      const innerMath = trimmed.replace(/^(\\\[|\$\$)/, '').replace(/(\\\]|\$\$)$/, '').trim();
+      const cleanF = cleanMathExpression(innerMath);
+      const fLines = wrapText(cleanF, contentWidth - 30, `bold 10pt "Cambria Math", "Times New Roman", ${fontFamily}`);
+      const boxH = Math.max(32, fLines.length * 18 + 12);
+
+      checkPageBreak(boxH + 8);
       currentY += 6;
+
       currentCtx.fillStyle = '#f8fafc';
       currentCtx.strokeStyle = '#cbd5e1';
       currentCtx.lineWidth = 1;
       currentCtx.beginPath();
       if (typeof (currentCtx as any).roundRect === 'function') {
-        (currentCtx as any).roundRect(margin, currentY, contentWidth, 32, 6);
+        (currentCtx as any).roundRect(margin, currentY, contentWidth, boxH, 6);
       } else {
-        currentCtx.rect(margin, currentY, contentWidth, 32);
+        currentCtx.rect(margin, currentY, contentWidth, boxH);
       }
       currentCtx.fill();
       currentCtx.stroke();
 
-      currentCtx.font = `bold 11pt "Cambria Math", "Times New Roman", ${fontFamily}`;
+      currentCtx.font = `bold 10pt "Cambria Math", "Times New Roman", ${fontFamily}`;
       currentCtx.fillStyle = '#0284c7';
       currentCtx.textAlign = 'center';
-      currentCtx.fillText(formula, pageWidth / 2, currentY + 20);
+      for (let fl = 0; fl < fLines.length; fl++) {
+        currentCtx.fillText(fLines[fl], pageWidth / 2, currentY + 18 + fl * 18);
+      }
       currentCtx.textAlign = 'left';
 
-      currentY += 40;
+      currentY += boxH + 8;
       continue;
     }
 
-    // Itemize bullet point (Giữ nguyên tiếng Việt có dấu)
-    if (trimmed.startsWith('\\item')) {
-      const itemText = trimmed.replace(/^\\item\s*/, '');
-      const wrappedItem = wrapText(itemText, contentWidth - 24, `10pt ${fontFamily}`);
-      checkPageBreak(wrappedItem.length * 16 + 4);
+    // Horizontal Rule (--- or ***)
+    if (trimmed === '---' || trimmed === '***' || trimmed === '\\hrule') {
+      checkPageBreak(14);
+      currentY += 6;
+      currentCtx.strokeStyle = '#e2e8f0';
+      currentCtx.lineWidth = 1;
+      currentCtx.beginPath();
+      currentCtx.moveTo(margin, currentY);
+      currentCtx.lineTo(pageWidth - margin, currentY);
+      currentCtx.stroke();
+      currentY += 10;
+      continue;
+    }
 
-      currentCtx.font = `bold 11pt ${fontFamily}`;
-      currentCtx.fillStyle = '#2563eb';
-      currentCtx.fillText('•', margin + 6, currentY + 10);
+    // Section / Markdown Heading 1 & 2
+    if (trimmed.startsWith('\\section{') || trimmed.startsWith('# ') || trimmed.startsWith('## ')) {
+      let secTitle = '';
+      let isH1 = false;
+      if (trimmed.startsWith('\\section{')) {
+        secTitle = trimmed.replace(/^\\section\{([^}]+)\}.*/, '$1');
+        isH1 = true;
+      } else if (trimmed.startsWith('# ')) {
+        secTitle = trimmed.replace(/^#\s+/, '').replace(/\*\*/g, '');
+        isH1 = true;
+        // Skip duplicate title if already drawn in header
+        if (secTitle.toLowerCase() === docTitle.toLowerCase() && i < 5) continue;
+      } else {
+        secTitle = trimmed.replace(/^##\s+/, '').replace(/\*\*/g, '');
+      }
 
-      currentCtx.font = `10pt ${fontFamily}`;
-      currentCtx.fillStyle = '#334155';
-      for (let i = 0; i < wrappedItem.length; i++) {
-        currentCtx.fillText(wrappedItem[i], margin + 20, currentY + 10);
+      secTitle = cleanInlineMath(secTitle);
+      checkPageBreak(36);
+      currentY += 8;
+
+      currentCtx.font = isH1 ? `bold 13pt ${fontFamily}` : `bold 11.5pt ${fontFamily}`;
+      currentCtx.fillStyle = isH1 ? '#1e3a8a' : '#1e40af';
+      const wrappedSec = wrapText(secTitle, contentWidth, currentCtx.font);
+      for (const line of wrappedSec) {
+        currentCtx.fillText(line, margin, currentY + 12);
+        currentY += 18;
+      }
+      currentY += 4;
+      continue;
+    }
+
+    // Subsection / Markdown Heading 3 (###)
+    if (trimmed.startsWith('\\subsection{') || trimmed.startsWith('### ')) {
+      let subTitle = '';
+      if (trimmed.startsWith('\\subsection{')) {
+        subTitle = trimmed.replace(/^\\subsection\{([^}]+)\}.*/, '$1');
+      } else {
+        subTitle = trimmed.replace(/^###\s+/, '').replace(/\*\*/g, '');
+      }
+
+      subTitle = cleanInlineMath(subTitle);
+      checkPageBreak(28);
+      currentY += 6;
+
+      currentCtx.font = `bold 10.5pt ${fontFamily}`;
+      currentCtx.fillStyle = '#0f172a';
+      const wrappedSub = wrapText(subTitle, contentWidth, currentCtx.font);
+      for (const line of wrappedSub) {
+        currentCtx.fillText(line, margin, currentY + 11);
         currentY += 16;
+      }
+      currentY += 4;
+      continue;
+    }
+
+    // Markdown Blockquote (> ...)
+    if (trimmed.startsWith('>')) {
+      const quoteText = cleanInlineMath(trimmed.replace(/^>\s*/, '').replace(/\*+/g, ''));
+      const wrappedQ = wrapText(quoteText, contentWidth - 24, `italic 9.5pt ${fontFamily}`);
+      const quoteH = wrappedQ.length * 15 + 10;
+
+      checkPageBreak(quoteH + 6);
+      currentY += 4;
+
+      currentCtx.fillStyle = '#f8fafc';
+      currentCtx.fillRect(margin, currentY, contentWidth, quoteH);
+
+      currentCtx.fillStyle = '#6366f1';
+      currentCtx.fillRect(margin, currentY, 3, quoteH);
+
+      currentCtx.font = `italic 9.5pt ${fontFamily}`;
+      currentCtx.fillStyle = '#475569';
+      for (let q = 0; q < wrappedQ.length; q++) {
+        currentCtx.fillText(wrappedQ[q], margin + 12, currentY + 12 + q * 15);
+      }
+
+      currentY += quoteH + 6;
+      continue;
+    }
+
+    // List item (*, -, \item)
+    if (trimmed.startsWith('\\item') || trimmed.startsWith('* ') || trimmed.startsWith('- ') || rawLine.match(/^\s+[*•-]/)) {
+      const isNested = rawLine.startsWith('  ') || rawLine.startsWith('\t');
+      const itemRaw = trimmed.replace(/^(\\item|\*|-|•)\s*/, '');
+      const itemClean = cleanInlineMath(itemRaw).replace(/\*\*([^*]+)\*\*/g, '$1');
+      const itemMargin = isNested ? margin + 24 : margin + 10;
+      const wrappedItem = wrapText(itemClean, contentWidth - (isNested ? 30 : 16), `9.5pt ${fontFamily}`);
+
+      checkPageBreak(wrappedItem.length * 15 + 4);
+
+      currentCtx.font = `bold 10pt ${fontFamily}`;
+      currentCtx.fillStyle = isNested ? '#64748b' : '#2563eb';
+      currentCtx.fillText(isNested ? '–' : '•', itemMargin - 10, currentY + 10);
+
+      currentCtx.font = `9.5pt ${fontFamily}`;
+      currentCtx.fillStyle = '#334155';
+      for (let it = 0; it < wrappedItem.length; it++) {
+        currentCtx.fillText(wrappedItem[it], itemMargin, currentY + 10);
+        currentY += 15;
       }
       currentY += 2;
       continue;
     }
 
-    // Environment tags
+    // Ignore environment boundaries
     if (trimmed.startsWith('\\begin{') || trimmed.startsWith('\\end{')) {
       continue;
     }
 
-    // Regular paragraph (Giữ nguyên tiếng Việt có dấu)
-    if (trimmed.length > 0) {
-      const cleanLine = trimmed
-        .replace(/\\textbf\{([^}]+)\}/g, '$1')
-        .replace(/\\textit\{([^}]+)\}/g, '$1');
-      const wrapped = wrapText(cleanLine, contentWidth, `10pt ${fontFamily}`);
-      checkPageBreak(wrapped.length * 16);
+    // Regular Paragraph
+    const cleanPara = cleanInlineMath(trimmed)
+      .replace(/\\textbf\{([^}]+)\}/g, '$1')
+      .replace(/\\textit\{([^}]+)\}/g, '$1')
+      .replace(/\*\*([^*]+)\*\*/g, '$1');
 
-      currentCtx.font = `10pt ${fontFamily}`;
-      currentCtx.fillStyle = '#334155';
-      for (const line of wrapped) {
-        currentCtx.fillText(line, margin, currentY + 10);
-        currentY += 16;
-      }
-      currentY += 4;
+    const wrappedP = wrapText(cleanPara, contentWidth, `9.5pt ${fontFamily}`);
+    checkPageBreak(wrappedP.length * 15 + 4);
+
+    currentCtx.font = `9.5pt ${fontFamily}`;
+    currentCtx.fillStyle = '#334155';
+    for (const line of wrappedP) {
+      currentCtx.fillText(line, margin, currentY + 10);
+      currentY += 15;
     }
+    currentY += 4;
   }
 
-  // Draw footer on final page
+  // Draw footer on last page
   currentCtx.font = `9pt ${fontFamily}`;
   currentCtx.fillStyle = '#94a3b8';
   currentCtx.textAlign = 'center';
@@ -403,7 +709,7 @@ function renderLatexPagesToCanvas(
 }
 
 /**
- * Compiles LaTeX source code to a standardized PDF document with full Vietnamese Unicode preservation
+ * Compiles LaTeX source code or Math Markdown to a standardized PDF document with full Vietnamese Unicode preservation
  */
 export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
   const titleMatch = code.match(/\\title\{([^}]+)\}/);
@@ -483,8 +789,8 @@ export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
   const lines = code.split('\n');
   for (const rawLine of lines) {
     const trimmed = rawLine.trim();
-    if (trimmed.startsWith('\\section{')) {
-      const secTitle = trimmed.replace(/^\\section\{([^}]+)\}.*/, '$1');
+    if (trimmed.startsWith('\\section{') || trimmed.startsWith('# ')) {
+      const secTitle = trimmed.replace(/^(\\section\{|#\s+)([^}]+)\}.*/, '$2');
       y -= 10;
       currentPage.drawText(removeDiacritics(secTitle), {
         x: margin,
@@ -510,7 +816,7 @@ export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
 }
 
 /**
- * Converts LaTeX source to a structured Word .docx document
+ * Converts LaTeX source or Math Markdown to a structured Word .docx document
  */
 export async function compileLatexToWord(code: string): Promise<Blob> {
   const lines = code.split('\n');
@@ -518,11 +824,14 @@ export async function compileLatexToWord(code: string): Promise<Blob> {
 
   const titleMatch = code.match(/\\title\{([^}]+)\}/);
   const authorMatch = code.match(/\\author\{([^}]+)\}/);
+  const mdTitleMatch = code.match(/^#\s+(.+)$/m);
 
-  if (titleMatch) {
+  const titleText = titleMatch ? titleMatch[1] : (mdTitleMatch ? mdTitleMatch[1].replace(/\*\*/g, '').trim() : '');
+
+  if (titleText) {
     paragraphs.push(
       new Paragraph({
-        text: titleMatch[1],
+        text: titleText,
         heading: HeadingLevel.TITLE,
       })
     );
@@ -537,7 +846,7 @@ export async function compileLatexToWord(code: string): Promise<Blob> {
     );
   }
 
-  let inDocument = false;
+  let inDocument = !code.includes('\\begin{document}');
 
   for (const rawLine of lines) {
     const trimmed = rawLine.trim();
@@ -549,35 +858,53 @@ export async function compileLatexToWord(code: string): Promise<Blob> {
     if (trimmed.includes('\\end{document}')) break;
     if (!inDocument) continue;
 
-    if (trimmed.startsWith('\\section{')) {
-      const sec = trimmed.replace(/^\\section\{([^}]+)\}.*/, '$1');
+    // Heading 1 & Section
+    if (trimmed.startsWith('\\section{') || trimmed.startsWith('# ') || trimmed.startsWith('## ')) {
+      let sec = '';
+      if (trimmed.startsWith('\\section{')) {
+        sec = trimmed.replace(/^\\section\{([^}]+)\}.*/, '$1');
+      } else if (trimmed.startsWith('# ')) {
+        sec = trimmed.replace(/^#\s+/, '').replace(/\*\*/g, '');
+        if (sec.toLowerCase() === titleText.toLowerCase()) continue;
+      } else {
+        sec = trimmed.replace(/^##\s+/, '').replace(/\*\*/g, '');
+      }
+
       paragraphs.push(
         new Paragraph({
-          text: sec,
+          text: cleanInlineMath(sec),
           heading: HeadingLevel.HEADING_1,
         })
       );
       continue;
     }
 
-    if (trimmed.startsWith('\\subsection{')) {
-      const sub = trimmed.replace(/^\\subsection\{([^}]+)\}.*/, '$1');
+    // Heading 2 & Subsection
+    if (trimmed.startsWith('\\subsection{') || trimmed.startsWith('### ')) {
+      let sub = '';
+      if (trimmed.startsWith('\\subsection{')) {
+        sub = trimmed.replace(/^\\subsection\{([^}]+)\}.*/, '$1');
+      } else {
+        sub = trimmed.replace(/^###\s+/, '').replace(/\*\*/g, '');
+      }
+
       paragraphs.push(
         new Paragraph({
-          text: sub,
+          text: cleanInlineMath(sub),
           heading: HeadingLevel.HEADING_2,
         })
       );
       continue;
     }
 
-    if (trimmed.startsWith('$$') && trimmed.endsWith('$$')) {
-      const eq = trimmed.slice(2, -2).trim();
+    // Display Math formulas
+    if (trimmed.startsWith('\\[') || trimmed.startsWith('$$')) {
+      const eq = trimmed.replace(/^(\\\[|\$\$)/, '').replace(/(\\\]|\$\$)$/, '').trim();
       paragraphs.push(
         new Paragraph({
           children: [
             new TextRun({
-              text: `[Công thức] ${eq}`,
+              text: `[Công thức]  ${cleanMathExpression(eq)}`,
               bold: true,
               color: '0369a1',
             }),
@@ -587,20 +914,22 @@ export async function compileLatexToWord(code: string): Promise<Blob> {
       continue;
     }
 
-    if (trimmed.startsWith('\\item')) {
-      const item = trimmed.replace(/^\\item\s*/, '');
+    // List item
+    if (trimmed.startsWith('\\item') || trimmed.startsWith('* ') || trimmed.startsWith('- ')) {
+      const item = trimmed.replace(/^(\\item|\*|-)\s*/, '');
       paragraphs.push(
         new Paragraph({
-          text: `• ${item}`,
+          text: `• ${cleanInlineMath(item).replace(/\*\*([^*]+)\*\*/g, '$1')}`,
         })
       );
       continue;
     }
 
-    if (trimmed.length > 0 && !trimmed.startsWith('\\begin') && !trimmed.startsWith('\\end')) {
+    // Normal paragraph
+    if (trimmed.length > 0 && !trimmed.startsWith('\\begin') && !trimmed.startsWith('\\end') && trimmed !== '---') {
       paragraphs.push(
         new Paragraph({
-          text: trimmed,
+          text: cleanInlineMath(trimmed).replace(/\*\*([^*]+)\*\*/g, '$1'),
         })
       );
     }
@@ -617,3 +946,4 @@ export async function compileLatexToWord(code: string): Promise<Blob> {
 
   return await Packer.toBlob(doc);
 }
+
