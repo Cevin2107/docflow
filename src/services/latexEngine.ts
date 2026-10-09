@@ -18,7 +18,7 @@ export interface LatexCompileResult {
 export const LATEX_TEMPLATES = {
   report: `\\documentclass{article}
 \\title{Báo cáo Kỹ thuật DocFlow}
-\\author{Nguyen Van A}
+\\author{Nguyễn Văn A}
 \\date{\\today}
 
 \\begin{document}
@@ -149,67 +149,126 @@ export function validateLatexSyntax(code: string): LatexCompileError[] {
 }
 
 /**
- * Compiles LaTeX source code to a standardized PDF document
+ * Renders LaTeX content to high-resolution Canvas pages with 100% Vietnamese Unicode support
  */
-export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
-  const pdfDoc = await PDFDocument.create();
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const fontItalic = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
-
+function renderLatexPagesToCanvas(
+  code: string,
+  meta: { title: string; author: string; date: string }
+): HTMLCanvasElement[] {
   const pageWidth = 595.28;
   const pageHeight = 841.89;
-  const margin = 55;
+  const scale = 2; // 2x Retina scale for high-DPI crisp print quality
+  const margin = 50;
   const contentWidth = pageWidth - margin * 2;
-  const lineHeight = 16;
+  const fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 
-  let currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
-  let y = pageHeight - margin;
+  const canvases: HTMLCanvasElement[] = [];
 
-  // Extract metadata
-  const titleMatch = code.match(/\\title\{([^}]+)\}/);
-  const authorMatch = code.match(/\\author\{([^}]+)\}/);
-  const title = titleMatch ? removeDiacritics(titleMatch[1]) : 'Latex Document';
-  const author = authorMatch ? removeDiacritics(authorMatch[1]) : '';
-
-  // Render Title
-  if (title) {
-    currentPage.drawText(title, {
-      x: margin,
-      y: y,
-      size: 20,
-      font: fontBold,
-      color: rgb(0.1, 0.15, 0.25),
-    });
-    y -= 26;
+  function createNewCanvas() {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(pageWidth * scale);
+    canvas.height = Math.round(pageHeight * scale);
+    const ctx = canvas.getContext('2d')!;
+    ctx.scale(scale, scale);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, pageWidth, pageHeight);
+    return { canvas, ctx };
   }
 
-  // Render Author
-  if (author) {
-    currentPage.drawText(`Author: ${author}`, {
-      x: margin,
-      y: y,
-      size: 11,
-      font: fontItalic,
-      color: rgb(0.35, 0.4, 0.48),
-    });
-    y -= 22;
+  let { canvas: currentCanvas, ctx: currentCtx } = createNewCanvas();
+  let currentY = margin;
+  let pageNumber = 1;
+
+  function wrapText(text: string, maxWidth: number, font: string): string[] {
+    currentCtx.font = font;
+    const words = text.split(/\s+/);
+    const resultLines: string[] = [];
+    let currentLine = '';
+
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const testWidth = currentCtx.measureText(testLine).width;
+      if (testWidth > maxWidth && currentLine) {
+        resultLines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    if (currentLine) {
+      resultLines.push(currentLine);
+    }
+    return resultLines.length > 0 ? resultLines : [''];
   }
 
-  // Draw dividing line
-  currentPage.drawLine({
-    start: { x: margin, y },
-    end: { x: pageWidth - margin, y },
-    color: rgb(0.85, 0.88, 0.92),
-    thickness: 1,
-  });
-  y -= 25;
+  function checkPageBreak(requiredHeight: number) {
+    if (currentY + requiredHeight > pageHeight - margin - 35) {
+      // Draw page number footer
+      currentCtx.font = `9pt ${fontFamily}`;
+      currentCtx.fillStyle = '#94a3b8';
+      currentCtx.textAlign = 'center';
+      currentCtx.fillText(`Trang ${pageNumber}`, pageWidth / 2, pageHeight - margin / 2);
+      currentCtx.textAlign = 'left';
+
+      canvases.push(currentCanvas);
+      pageNumber++;
+
+      const newPage = createNewCanvas();
+      currentCanvas = newPage.canvas;
+      currentCtx = newPage.ctx;
+      currentY = margin;
+    }
+  }
+
+  // Render Title (Giữ nguyên tiếng Việt có dấu)
+  if (meta.title) {
+    const titleLines = wrapText(meta.title, contentWidth, `bold 18pt ${fontFamily}`);
+    currentCtx.font = `bold 18pt ${fontFamily}`;
+    currentCtx.fillStyle = '#0f172a';
+    for (const line of titleLines) {
+      checkPageBreak(28);
+      currentCtx.fillText(line, margin, currentY + 18);
+      currentY += 26;
+    }
+    currentY += 4;
+  }
+
+  // Render Author & Date (Giữ nguyên tiếng Việt có dấu)
+  if (meta.author || meta.date) {
+    checkPageBreak(22);
+    currentCtx.font = `italic 10.5pt ${fontFamily}`;
+    currentCtx.fillStyle = '#475569';
+    const dateFormatted = meta.date === '\\today' ? new Date().toLocaleDateString('vi-VN') : meta.date;
+    const subText = [
+      meta.author ? `Tác giả: ${meta.author}` : '',
+      dateFormatted ? `Ngày: ${dateFormatted}` : ''
+    ].filter(Boolean).join('   •   ');
+
+    currentCtx.fillText(subText, margin, currentY + 11);
+    currentY += 20;
+  }
+
+  // Divider line
+  checkPageBreak(16);
+  currentCtx.strokeStyle = '#e2e8f0';
+  currentCtx.lineWidth = 1;
+  currentCtx.beginPath();
+  currentCtx.moveTo(margin, currentY);
+  currentCtx.lineTo(pageWidth - margin, currentY);
+  currentCtx.stroke();
+  currentY += 20;
 
   const lines = code.split('\n');
   let inDocument = false;
+  let sectionIndex = 1;
+  let subsectionIndex = 1;
 
   for (const rawLine of lines) {
     const trimmed = rawLine.trim();
+    if (!trimmed) {
+      currentY += 6;
+      continue;
+    }
 
     if (trimmed.includes('\\begin{document}')) {
       inDocument = true;
@@ -225,13 +284,205 @@ export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
       continue;
     }
 
-    // Check page space
-    if (y < margin + 40) {
-      currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
-      y = pageHeight - margin;
+    // Section header (Giữ nguyên tiếng Việt có dấu)
+    if (trimmed.startsWith('\\section{')) {
+      const secTitle = trimmed.replace(/^\\section\{([^}]+)\}.*/, '$1');
+      subsectionIndex = 1;
+      checkPageBreak(38);
+      currentY += 10;
+      currentCtx.font = `bold 13pt ${fontFamily}`;
+      currentCtx.fillStyle = '#1d4ed8';
+      const sectionText = `${sectionIndex}. ${secTitle}`;
+      const wrappedSec = wrapText(sectionText, contentWidth, `bold 13pt ${fontFamily}`);
+      for (const line of wrappedSec) {
+        currentCtx.fillText(line, margin, currentY + 13);
+        currentY += 20;
+      }
+      sectionIndex++;
+      currentY += 4;
+      continue;
     }
 
-    // Section header
+    // Subsection header (Giữ nguyên tiếng Việt có dấu)
+    if (trimmed.startsWith('\\subsection{')) {
+      const subTitle = trimmed.replace(/^\\subsection\{([^}]+)\}.*/, '$1');
+      checkPageBreak(30);
+      currentY += 8;
+      currentCtx.font = `bold 11pt ${fontFamily}`;
+      currentCtx.fillStyle = '#1e293b';
+      const subText = `${sectionIndex - 1}.${subsectionIndex} ${subTitle}`;
+      const wrappedSub = wrapText(subText, contentWidth, `bold 11pt ${fontFamily}`);
+      for (const line of wrappedSub) {
+        currentCtx.fillText(line, margin, currentY + 11);
+        currentY += 16;
+      }
+      subsectionIndex++;
+      currentY += 4;
+      continue;
+    }
+
+    // Math formula block ($$ ... $$)
+    if (trimmed.startsWith('$$') && trimmed.endsWith('$$')) {
+      const formula = trimmed.slice(2, -2).trim();
+      checkPageBreak(44);
+      currentY += 6;
+      currentCtx.fillStyle = '#f8fafc';
+      currentCtx.strokeStyle = '#cbd5e1';
+      currentCtx.lineWidth = 1;
+      currentCtx.beginPath();
+      if (typeof (currentCtx as any).roundRect === 'function') {
+        (currentCtx as any).roundRect(margin, currentY, contentWidth, 32, 6);
+      } else {
+        currentCtx.rect(margin, currentY, contentWidth, 32);
+      }
+      currentCtx.fill();
+      currentCtx.stroke();
+
+      currentCtx.font = `bold 11pt "Cambria Math", "Times New Roman", ${fontFamily}`;
+      currentCtx.fillStyle = '#0284c7';
+      currentCtx.textAlign = 'center';
+      currentCtx.fillText(formula, pageWidth / 2, currentY + 20);
+      currentCtx.textAlign = 'left';
+
+      currentY += 40;
+      continue;
+    }
+
+    // Itemize bullet point (Giữ nguyên tiếng Việt có dấu)
+    if (trimmed.startsWith('\\item')) {
+      const itemText = trimmed.replace(/^\\item\s*/, '');
+      const wrappedItem = wrapText(itemText, contentWidth - 24, `10pt ${fontFamily}`);
+      checkPageBreak(wrappedItem.length * 16 + 4);
+
+      currentCtx.font = `bold 11pt ${fontFamily}`;
+      currentCtx.fillStyle = '#2563eb';
+      currentCtx.fillText('•', margin + 6, currentY + 10);
+
+      currentCtx.font = `10pt ${fontFamily}`;
+      currentCtx.fillStyle = '#334155';
+      for (let i = 0; i < wrappedItem.length; i++) {
+        currentCtx.fillText(wrappedItem[i], margin + 20, currentY + 10);
+        currentY += 16;
+      }
+      currentY += 2;
+      continue;
+    }
+
+    // Environment tags
+    if (trimmed.startsWith('\\begin{') || trimmed.startsWith('\\end{')) {
+      continue;
+    }
+
+    // Regular paragraph (Giữ nguyên tiếng Việt có dấu)
+    if (trimmed.length > 0) {
+      const cleanLine = trimmed
+        .replace(/\\textbf\{([^}]+)\}/g, '$1')
+        .replace(/\\textit\{([^}]+)\}/g, '$1');
+      const wrapped = wrapText(cleanLine, contentWidth, `10pt ${fontFamily}`);
+      checkPageBreak(wrapped.length * 16);
+
+      currentCtx.font = `10pt ${fontFamily}`;
+      currentCtx.fillStyle = '#334155';
+      for (const line of wrapped) {
+        currentCtx.fillText(line, margin, currentY + 10);
+        currentY += 16;
+      }
+      currentY += 4;
+    }
+  }
+
+  // Draw footer on final page
+  currentCtx.font = `9pt ${fontFamily}`;
+  currentCtx.fillStyle = '#94a3b8';
+  currentCtx.textAlign = 'center';
+  currentCtx.fillText(`Trang ${pageNumber}`, pageWidth / 2, pageHeight - margin / 2);
+  currentCtx.textAlign = 'left';
+
+  canvases.push(currentCanvas);
+  return canvases;
+}
+
+/**
+ * Compiles LaTeX source code to a standardized PDF document with full Vietnamese Unicode preservation
+ */
+export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
+  const titleMatch = code.match(/\\title\{([^}]+)\}/);
+  const authorMatch = code.match(/\\author\{([^}]+)\}/);
+  const dateMatch = code.match(/\\date\{([^}]+)\}/);
+
+  const rawTitle = titleMatch ? titleMatch[1].trim() : 'Tài liệu LaTeX';
+  const rawAuthor = authorMatch ? authorMatch[1].trim() : '';
+  const rawDate = dateMatch ? dateMatch[1].trim() : '';
+
+  // 1. Browser runtime: High-resolution Canvas rendering retaining 100% Vietnamese diacritics
+  if (typeof document !== 'undefined') {
+    const canvases = renderLatexPagesToCanvas(code, {
+      title: rawTitle,
+      author: rawAuthor,
+      date: rawDate,
+    });
+
+    const pdfDoc = await PDFDocument.create();
+
+    for (const canvas of canvases) {
+      const dataUrl = canvas.toDataURL('image/png');
+      const response = await fetch(dataUrl);
+      const arrayBuffer = await response.arrayBuffer();
+      const pngImage = await pdfDoc.embedPng(new Uint8Array(arrayBuffer));
+      const page = pdfDoc.addPage([595.28, 841.89]);
+      page.drawImage(pngImage, {
+        x: 0,
+        y: 0,
+        width: 595.28,
+        height: 841.89,
+      });
+    }
+
+    return await pdfDoc.save();
+  }
+
+  // 2. Headless fallback for Node environments (test suites)
+  const pdfDoc = await PDFDocument.create();
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const fontItalic = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+
+  const pageWidth = 595.28;
+  const pageHeight = 841.89;
+  const margin = 55;
+  const lineHeight = 16;
+
+  let currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
+  let y = pageHeight - margin;
+
+  const title = removeDiacritics(rawTitle);
+  const author = removeDiacritics(rawAuthor);
+
+  if (title) {
+    currentPage.drawText(title, {
+      x: margin,
+      y: y,
+      size: 20,
+      font: fontBold,
+      color: rgb(0.1, 0.15, 0.25),
+    });
+    y -= 26;
+  }
+
+  if (author) {
+    currentPage.drawText(`Author: ${author}`, {
+      x: margin,
+      y: y,
+      size: 11,
+      font: fontItalic,
+      color: rgb(0.35, 0.4, 0.48),
+    });
+    y -= 22;
+  }
+
+  const lines = code.split('\n');
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
     if (trimmed.startsWith('\\section{')) {
       const secTitle = trimmed.replace(/^\\section\{([^}]+)\}.*/, '$1');
       y -= 10;
@@ -243,87 +494,15 @@ export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
         color: rgb(0.1, 0.3, 0.6),
       });
       y -= 20;
-      continue;
-    }
-
-    // Subsection header
-    if (trimmed.startsWith('\\subsection{')) {
-      const subTitle = trimmed.replace(/^\\subsection\{([^}]+)\}.*/, '$1');
-      y -= 6;
-      currentPage.drawText(removeDiacritics(subTitle), {
-        x: margin,
-        y: y,
-        size: 12,
-        font: fontBold,
-        color: rgb(0.2, 0.25, 0.35),
-      });
-      y -= 18;
-      continue;
-    }
-
-    // Math formula block ($$ ... $$)
-    if (trimmed.startsWith('$$') && trimmed.endsWith('$$')) {
-      const formula = trimmed.slice(2, -2).trim();
-      y -= 6;
-      currentPage.drawRectangle({
-        x: margin,
-        y: y - 10,
-        width: contentWidth,
-        height: 28,
-        color: rgb(0.96, 0.98, 1),
-        borderColor: rgb(0.8, 0.88, 0.98),
-        borderWidth: 1,
-      });
-
-      currentPage.drawText(`[EQ]  ${removeDiacritics(formula)}`, {
-        x: margin + 15,
-        y: y - 2,
-        size: 11,
-        font: fontBold,
-        color: rgb(0.05, 0.35, 0.7),
-      });
-      y -= 38;
-      continue;
-    }
-
-    // Itemize bullet point
-    if (trimmed.startsWith('\\item')) {
-      const itemText = trimmed.replace(/^\\item\s*/, '');
-      currentPage.drawText('•', {
-        x: margin + 8,
-        y: y,
-        size: 12,
-        font: fontBold,
-        color: rgb(0.2, 0.2, 0.2),
-      });
-
-      currentPage.drawText(removeDiacritics(itemText), {
-        x: margin + 22,
-        y: y,
-        size: 10,
-        font: font,
-        color: rgb(0.2, 0.2, 0.2),
-      });
-      y -= lineHeight;
-      continue;
-    }
-
-    // Ignore environment tags
-    if (trimmed.startsWith('\\begin{') || trimmed.startsWith('\\end{')) {
-      continue;
-    }
-
-    // Normal text paragraph
-    if (trimmed.length > 0) {
-      const cleanLine = removeDiacritics(trimmed.replace(/\\textbf\{([^}]+)\}/g, '$1').replace(/\\textit\{([^}]+)\}/g, '$1'));
-      currentPage.drawText(cleanLine, {
+    } else if (trimmed.length > 0 && !trimmed.startsWith('\\')) {
+      currentPage.drawText(removeDiacritics(trimmed), {
         x: margin,
         y: y,
         size: 10,
         font: font,
         color: rgb(0.25, 0.25, 0.3),
       });
-      y -= lineHeight + 2;
+      y -= lineHeight;
     }
   }
 
