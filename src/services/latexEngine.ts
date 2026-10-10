@@ -390,11 +390,11 @@ export function renderSingleBlockHtml(block: DocumentBlock): string {
       const content = block.content.trim();
       const isArrayTable = content.includes('\\begin{array}') || content.includes('\\begin{matrix}') || content.includes('\\begin{tabular}');
 
-      // 1. Array Table / Matrix: Auto-scale font size to 0.78em so 5-column sign tables fit A4 perfectly without clipping
+      // 1. Array Table / Matrix: Set font-size to 0.72em so wide 5-column sign tables fit easily inside A4 margins
       if (isArrayTable) {
         return `
-          <div class="docflow-block docflow-math katex-display-center text-center my-3 py-2.5 px-2 bg-slate-50/90 rounded-xl border border-slate-200/80 shadow-2xs overflow-hidden" style="font-size: 0.78em; line-height: 1.25;">
-            <div class="katex-table-wrap inline-block max-w-full">
+          <div class="docflow-block docflow-math katex-display-center text-center my-3 py-2 px-1 bg-slate-50/90 rounded-xl border border-slate-200/80 shadow-2xs overflow-hidden" style="font-size: 0.72em; line-height: 1.2; box-sizing: border-box; max-width: 100%;">
+            <div class="katex-table-wrap inline-block max-w-full overflow-hidden">
               ${renderKaTeX(content, true)}
             </div>
           </div>
@@ -411,11 +411,11 @@ export function renderSingleBlockHtml(block: DocumentBlock): string {
 
         if (parts.length > 1) {
           return `
-            <div class="docflow-block docflow-math katex-display-center text-center my-3 py-2.5 px-3 bg-slate-50/90 rounded-xl border border-slate-200/80 shadow-2xs">
-              <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 max-w-full">
+            <div class="docflow-block docflow-math katex-display-center text-center my-3 py-2.5 px-3 bg-slate-50/90 rounded-xl border border-slate-200/80 shadow-2xs max-w-full overflow-hidden" style="box-sizing: border-box;">
+              <div class="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 max-w-full">
                 ${parts.map((p, idx) => {
                   const hasComma = idx < parts.length - 1 && !p.endsWith(',') && !p.endsWith(';');
-                  return `<span class="inline-block">${renderKaTeX(hasComma ? p + ',' : p, false)}</span>`;
+                  return `<span class="inline-block" style="font-size: 0.95em;">${renderKaTeX(hasComma ? p + ',' : p, false)}</span>`;
                 }).join('')}
               </div>
             </div>
@@ -426,8 +426,8 @@ export function renderSingleBlockHtml(block: DocumentBlock): string {
       // 3. Other single formulas: scale down slightly if very long to prevent edge clipping
       const isLongFormula = content.length > 55;
       return `
-        <div class="docflow-block docflow-math katex-display-center text-center my-3 py-2 px-3 bg-slate-50/90 rounded-xl border border-slate-200/80 shadow-2xs overflow-hidden" ${isLongFormula ? 'style="font-size: 0.88em;"' : ''}>
-          <div class="katex-math-scaler inline-block max-w-full">
+        <div class="docflow-block docflow-math katex-display-center text-center my-3 py-2 px-3 bg-slate-50/90 rounded-xl border border-slate-200/80 shadow-2xs overflow-hidden max-w-full" style="box-sizing: border-box; ${isLongFormula ? 'font-size: 0.86em;' : ''}">
+          <div class="katex-math-scaler inline-block max-w-full overflow-hidden">
             ${renderKaTeX(content, true)}
           </div>
         </div>
@@ -436,7 +436,7 @@ export function renderSingleBlockHtml(block: DocumentBlock): string {
 
     case 'blockquote':
       return `
-        <div class="docflow-block docflow-quote my-3 border-l-4 border-indigo-500 bg-indigo-50/70 p-3.5 pl-4 rounded-r-xl shadow-2xs space-y-2 max-w-full">
+        <div class="docflow-block docflow-quote my-3 border-l-4 border-indigo-500 bg-indigo-50/70 p-3.5 pl-4 rounded-r-xl shadow-2xs space-y-2 max-w-full overflow-hidden" style="box-sizing: border-box; word-break: break-word;">
           ${block.innerBlocks ? block.innerBlocks.map(renderSingleBlockHtml).join('\n') : ''}
         </div>
       `;
@@ -678,6 +678,12 @@ export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
           backgroundColor: '#ffffff',
           windowWidth: A4_WIDTH_PX,
           windowHeight: A4_HEIGHT_PX,
+          onclone: (clonedDoc) => {
+            const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+              .map(el => el.outerHTML)
+              .join('\n');
+            clonedDoc.head.insertAdjacentHTML('beforeend', styles);
+          }
         });
 
         const dataUrl = pageCanvas.toDataURL('image/png');

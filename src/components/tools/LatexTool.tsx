@@ -97,6 +97,11 @@ export const LatexTool: React.FC = () => {
     const doc = iframe.contentWindow?.document;
     if (!doc) return;
 
+    // Collect all loaded styles & font-faces directly from active document (Zero CDN latency!)
+    const activeStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+      .map((el) => el.outerHTML)
+      .join('\n');
+
     doc.open();
     doc.write(`
       <!DOCTYPE html>
@@ -104,12 +109,20 @@ export const LatexTool: React.FC = () => {
         <head>
           <meta charset="UTF-8" />
           <title>Tài liệu Toán học - DocFlow</title>
-          <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css" />
-          <script src="https://cdn.tailwindcss.com"></script>
+          ${activeStyles}
           <style>
             @media print {
-              body { padding: 0 !important; margin: 0 !important; background: #ffffff !important; }
-              @page { margin: 18mm 16mm; size: A4; }
+              body { 
+                padding: 0 !important; 
+                margin: 0 !important; 
+                background: #ffffff !important; 
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+              @page { 
+                margin: 16mm 14mm; 
+                size: A4; 
+              }
               .docflow-block, .katex-display-center, .docflow-quote, .katex-display { 
                 break-inside: avoid !important; 
                 page-break-inside: avoid !important; 
@@ -119,6 +132,10 @@ export const LatexTool: React.FC = () => {
                 page-break-after: avoid !important; 
               }
             }
+            .docflow-math-document {
+              padding: 0 !important;
+              max-width: 100% !important;
+            }
             .katex-display { text-align: center !important; margin: 0.6rem 0 !important; }
             .katex-display-center { text-align: center !important; width: 100%; box-sizing: border-box; }
             .katex .frac-line { border-bottom-width: 1.5px !important; min-height: 1.5px !important; }
@@ -127,17 +144,29 @@ export const LatexTool: React.FC = () => {
             .katex .text { font-family: inherit !important; }
           </style>
         </head>
-        <body class="bg-white text-slate-900 font-sans p-6 sm:p-10 selection:bg-blue-100">
+        <body class="bg-white text-slate-900 font-sans p-6 sm:p-8">
           ${liveHtmlContent}
         </body>
       </html>
     `);
     doc.close();
 
-    setTimeout(() => {
-      iframe.contentWindow?.focus();
-      iframe.contentWindow?.print();
-    }, 400);
+    const win = iframe.contentWindow;
+    if (win) {
+      if ('fonts' in win.document) {
+        win.document.fonts.ready.then(() => {
+          setTimeout(() => {
+            win.focus();
+            win.print();
+          }, 150);
+        });
+      } else {
+        setTimeout(() => {
+          win.focus();
+          win.print();
+        }, 300);
+      }
+    }
   };
 
   const handleConvertToWord = async () => {
@@ -226,12 +255,22 @@ export const LatexTool: React.FC = () => {
               </button>
 
               <button
+                onClick={handlePrintDocument}
+                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold rounded-lg flex items-center gap-1 shadow-md shadow-emerald-600/30 transition-all cursor-pointer"
+                title="Xuất PDF Vector 100% chuẩn Overleaf qua hộp thoại in của trình duyệt (chọn Save as PDF)"
+              >
+                <Printer className="w-3 h-3" />
+                <span>Xuất PDF Vector</span>
+              </button>
+
+              <button
                 onClick={handleCompilePdf}
                 disabled={isCompiling}
-                className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold rounded-lg flex items-center gap-1.5 shadow-md shadow-purple-600/30 transition-all cursor-pointer"
+                className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold rounded-lg flex items-center gap-1 shadow-md shadow-purple-600/30 transition-all cursor-pointer"
+                title="Biên dịch PDF xem trước trong ứng dụng"
               >
                 <Play className={`w-3 h-3 fill-current ${isCompiling ? 'animate-spin' : ''}`} />
-                <span>{isCompiling ? 'Đang biên dịch...' : 'Biên dịch PDF'}</span>
+                <span className="hidden sm:inline">{isCompiling ? 'Đang biên dịch...' : 'Biên dịch PDF'}</span>
               </button>
             </div>
           </div>
@@ -299,11 +338,11 @@ export const LatexTool: React.FC = () => {
             <div className="flex items-center gap-1.5">
               <button
                 onClick={handlePrintDocument}
-                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-[11px] font-semibold flex items-center gap-1 border border-slate-700 transition-colors"
-                title="In hoặc Lưu thành tệp PDF Vector chuẩn của trình duyệt"
+                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+                title="Xuất file PDF Vector 100% chuẩn Overleaf qua hộp thoại in của trình duyệt (chọn Save as PDF)"
               >
-                <Printer className="w-3 h-3 text-emerald-400" />
-                <span className="hidden sm:inline">In / Lưu PDF</span>
+                <Printer className="w-3 h-3" />
+                <span>Xuất PDF Vector (Chuẩn 100%)</span>
               </button>
 
               <button
@@ -354,16 +393,17 @@ export const LatexTool: React.FC = () => {
             {previewMode === 'math' ? (
               /* Mode 1: Interactive KaTeX Live Math Document */
               <div className="w-full max-w-3xl flex flex-col gap-3">
-                <div className="px-3 py-2 rounded-xl bg-purple-950/40 border border-purple-800/40 text-[11px] text-purple-300 flex items-center justify-between gap-2 flex-wrap">
-                  <div className="flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                    <span>Xem trực tiếp công thức KaTeX & Tiếng Việt chuẩn.</span>
+                <div className="px-3.5 py-2.5 rounded-xl bg-emerald-950/50 border border-emerald-700/60 text-[11px] text-emerald-200 flex items-center justify-between gap-3 flex-wrap shadow-xs">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Công thức KaTeX, phân số & bảng xét dấu hiển thị chuẩn mực 100%.</span>
                   </div>
                   <button
                     onClick={handlePrintDocument}
-                    className="font-bold underline hover:text-white transition-colors cursor-pointer"
+                    className="font-bold px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
                   >
-                    In / Lưu PDF Vector (Khuyên dùng) →
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Xuất PDF Vector Chuẩn 100% (Save as PDF) →</span>
                   </button>
                 </div>
 
@@ -384,25 +424,34 @@ export const LatexTool: React.FC = () => {
                 />
               ) : (
                 <div className="text-center p-8 max-w-sm space-y-4 my-auto">
-                  <div className="w-16 h-16 rounded-2xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center mx-auto">
-                    <Code2 className="w-8 h-8" />
+                  <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
+                    <Printer className="w-8 h-8" />
                   </div>
                   <div className="space-y-1">
                     <h4 className="text-sm font-bold text-slate-200">
-                      Chưa biên dịch tệp PDF
+                      Xuất tài liệu PDF Chuẩn Overleaf
                     </h4>
                     <p className="text-xs text-slate-400 leading-relaxed">
-                      Bạn có thể xem trước công thức trực tiếp ở tab <b className="text-purple-400">Xem Toán học (KaTeX)</b> hoặc bấm nút bên dưới để tạo file PDF đóng gói chuẩn A4.
+                      Để có bản in sắc nét 100% không lệch dấu phân số và bảng nguyên vẹn, bạn có thể bấm <b className="text-emerald-400">Xuất PDF Vector</b> hoặc biên dịch trực tiếp.
                     </p>
                   </div>
-                  <button
-                    onClick={handleCompilePdf}
-                    disabled={isCompiling}
-                    className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold inline-flex items-center gap-2 shadow-lg shadow-purple-600/20 transition-all cursor-pointer"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    <span>Biên dịch PDF ngay</span>
-                  </button>
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-2">
+                    <button
+                      onClick={handlePrintDocument}
+                      className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold inline-flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition-all cursor-pointer"
+                    >
+                      <Printer className="w-4 h-4" />
+                      <span>Xuất PDF Vector (Khuyên dùng)</span>
+                    </button>
+                    <button
+                      onClick={handleCompilePdf}
+                      disabled={isCompiling}
+                      className="w-full sm:w-auto px-3.5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5 shadow-lg shadow-purple-600/20 transition-all cursor-pointer"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Biên dịch PDF</span>
+                    </button>
+                  </div>
                 </div>
               )
             )}
