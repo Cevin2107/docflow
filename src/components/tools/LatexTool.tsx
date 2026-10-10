@@ -35,6 +35,8 @@ export const LatexTool: React.FC = () => {
 
   const printFrameRef = useRef<HTMLIFrameElement | null>(null);
 
+  const [compileStatusText, setCompileStatusText] = useState<string>('');
+
   // Validate syntax on code change
   useEffect(() => {
     const errors = validateLatexSyntax(code);
@@ -67,16 +69,18 @@ export const LatexTool: React.FC = () => {
 
   const handleCompilePdf = async () => {
     setIsCompiling(true);
+    setCompileStatusText('Đang phân trang A4 & kết xuất công thức KaTeX...');
     try {
       const pdfBytes = await compileLatexToPdf(code);
       setCompiledPdfBytes(pdfBytes);
       setPreviewMode('pdf');
-      addToast('Biên dịch LaTeX sang PDF thành công!', 'success');
+      addToast('Biên dịch PDF thành công! Chuẩn khổ A4 không cắt đôi công thức.', 'success');
     } catch (err: any) {
       console.error(err);
       addToast(`Lỗi biên dịch: ${err?.message}`, 'error');
     } finally {
       setIsCompiling(false);
+      setCompileStatusText('');
     }
   };
 
@@ -96,23 +100,34 @@ export const LatexTool: React.FC = () => {
     doc.open();
     doc.write(`
       <!DOCTYPE html>
-      <html>
+      <html lang="vi">
         <head>
+          <meta charset="UTF-8" />
           <title>Tài liệu Toán học - DocFlow</title>
           <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css" />
           <script src="https://cdn.tailwindcss.com"></script>
           <style>
             @media print {
-              body { padding: 0 !important; margin: 0 !important; }
-              @page { margin: 18mm; size: A4; }
-              .katex-display-center, .blockquote-box { break-inside: avoid !important; }
-              h1, h2, h3, h4 { break-after: avoid !important; }
+              body { padding: 0 !important; margin: 0 !important; background: #ffffff !important; }
+              @page { margin: 18mm 16mm; size: A4; }
+              .docflow-block, .katex-display-center, .docflow-quote, .katex-display { 
+                break-inside: avoid !important; 
+                page-break-inside: avoid !important; 
+              }
+              h1, h2, h3, h4, .docflow-h1, .docflow-h2, .docflow-h3 { 
+                break-after: avoid !important; 
+                page-break-after: avoid !important; 
+              }
             }
-            .katex-display { text-align: center !important; margin: 0.8rem 0 !important; }
-            .katex-display-center { text-align: center !important; }
+            .katex-display { text-align: center !important; margin: 0.6rem 0 !important; }
+            .katex-display-center { text-align: center !important; width: 100%; box-sizing: border-box; }
+            .katex .frac-line { border-bottom-width: 1.5px !important; min-height: 1.5px !important; }
+            .katex .katex-mathml { display: none !important; }
+            .katex .katex-html { display: inline-block !important; }
+            .katex .text { font-family: inherit !important; }
           </style>
         </head>
-        <body class="bg-white text-slate-900 font-sans p-6 sm:p-10">
+        <body class="bg-white text-slate-900 font-sans p-6 sm:p-10 selection:bg-blue-100">
           ${liveHtmlContent}
         </body>
       </html>
@@ -122,7 +137,7 @@ export const LatexTool: React.FC = () => {
     setTimeout(() => {
       iframe.contentWindow?.focus();
       iframe.contentWindow?.print();
-    }, 350);
+    }, 400);
   };
 
   const handleConvertToWord = async () => {
@@ -324,14 +339,40 @@ export const LatexTool: React.FC = () => {
           </div>
 
           {/* Preview Canvas / Document Area */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex items-start justify-center bg-slate-950/60">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex items-start justify-center bg-slate-950/60 relative">
+            {/* Compiling Spinner Overlay */}
+            {isCompiling && (
+              <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-xs flex flex-col items-center justify-center gap-3 z-50 animate-in fade-in duration-150">
+                <div className="w-10 h-10 border-3 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs sm:text-sm font-semibold text-purple-200 animate-pulse">
+                  {compileStatusText || 'Đang biên dịch PDF chuẩn A4...'}
+                </span>
+                <span className="text-[11px] text-slate-400">Tự động ngắt trang thông minh, bảo toàn công thức toán & lề trang</span>
+              </div>
+            )}
+
             {previewMode === 'math' ? (
               /* Mode 1: Interactive KaTeX Live Math Document */
-              <div className="w-full max-w-3xl bg-white text-slate-900 rounded-2xl shadow-2xl border border-slate-200/80 overflow-hidden min-h-[800px] animate-in fade-in duration-200">
-                <div 
-                  dangerouslySetInnerHTML={{ __html: liveHtmlContent }} 
-                  className="p-6 sm:p-10 select-text"
-                />
+              <div className="w-full max-w-3xl flex flex-col gap-3">
+                <div className="px-3 py-2 rounded-xl bg-purple-950/40 border border-purple-800/40 text-[11px] text-purple-300 flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                    <span>Xem trực tiếp công thức KaTeX & Tiếng Việt chuẩn.</span>
+                  </div>
+                  <button
+                    onClick={handlePrintDocument}
+                    className="font-bold underline hover:text-white transition-colors cursor-pointer"
+                  >
+                    In / Lưu PDF Vector (Khuyên dùng) →
+                  </button>
+                </div>
+
+                <div className="w-full bg-white text-slate-900 rounded-2xl shadow-2xl border border-slate-200/80 overflow-hidden min-h-[800px] animate-in fade-in duration-200">
+                  <div 
+                    dangerouslySetInnerHTML={{ __html: liveHtmlContent }} 
+                    className="p-6 sm:p-10 select-text"
+                  />
+                </div>
               </div>
             ) : (
               /* Mode 2: Compiled PDF Viewer */
@@ -351,7 +392,7 @@ export const LatexTool: React.FC = () => {
                       Chưa biên dịch tệp PDF
                     </h4>
                     <p className="text-xs text-slate-400 leading-relaxed">
-                      Bạn có thể xem trước công thức trực tiếp ở tab <b className="text-purple-400">Xem Toán học (KaTeX)</b> hoặc bấm nút bên dưới để tạo file PDF đóng gói.
+                      Bạn có thể xem trước công thức trực tiếp ở tab <b className="text-purple-400">Xem Toán học (KaTeX)</b> hoặc bấm nút bên dưới để tạo file PDF đóng gói chuẩn A4.
                     </p>
                   </div>
                   <button

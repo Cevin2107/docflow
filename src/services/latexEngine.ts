@@ -175,7 +175,7 @@ export function validateLatexSyntax(code: string): LatexCompileError[] {
 /**
  * Safely renders LaTeX math using KaTeX with output='html' to prevent MathML duplicate text artifacts
  */
-function renderKaTeX(formula: string, displayMode: boolean): string {
+export function renderKaTeX(formula: string, displayMode: boolean): string {
   try {
     return katex.renderToString(formula.trim(), {
       displayMode,
@@ -184,24 +184,30 @@ function renderKaTeX(formula: string, displayMode: boolean): string {
       output: 'html', // Pure HTML output prevents double overlapping text in html2canvas
     });
   } catch {
-    return `<span class="katex-fallback font-mono text-blue-700">${formula}</span>`;
+    return `<span class="katex-fallback font-mono text-blue-700 font-semibold">${formula}</span>`;
   }
 }
 
 /**
  * Parses inline formatting: Math \( ... \) or $ ... $, bold **...**, italic *...*
  */
-function parseInlineContent(text: string): string {
+export function parseInlineContent(text: string): string {
   if (!text) return '';
-  // 1. Double backslash inline math \\( ... \\)
-  let parsed = text.replace(/\\\\\((.*?)\\\\\)/g, (_, m) => renderKaTeX(m, false));
-  // 2. Standard inline math \( ... \)
+  // 1. Double backslash display math embedded in text \\\[ ... \\\]
+  let parsed = text.replace(/\\\\\[(.*?)\\\\\]/g, (_, m) => renderKaTeX(m, true));
+  // 2. Standard display math embedded in text \[ ... \]
+  parsed = parsed.replace(/\\\[(.*?)\\\]/g, (_, m) => renderKaTeX(m, true));
+  // 3. Double backslash inline math \\( ... \\)
+  parsed = parsed.replace(/\\\\\((.*?)\\\\\)/g, (_, m) => renderKaTeX(m, false));
+  // 4. Standard inline math \( ... \)
   parsed = parsed.replace(/\\\((.*?)\\\)/g, (_, m) => renderKaTeX(m, false));
-  // 3. Single dollar math $ ... $
+  // 5. Double dollar math $$ ... $$
+  parsed = parsed.replace(/\$\$([^$]+)\$\$/g, (_, m) => renderKaTeX(m, true));
+  // 6. Single dollar math $ ... $
   parsed = parsed.replace(/\$([^$]+)\$/g, (_, m) => renderKaTeX(m, false));
-  // 4. Bold **...**
+  // 7. Bold **...**
   parsed = parsed.replace(/\*\*([^*]+)\*\*/g, '<strong class="font-bold text-slate-900">$1</strong>');
-  // 5. Italic *...*
+  // 8. Italic *...*
   parsed = parsed.replace(/\*([^*]+)\*/g, '<em class="italic text-slate-700">$1</em>');
   return parsed;
 }
@@ -236,13 +242,17 @@ export function parseDocumentBlocks(rawLines: string[]): DocumentBlock[] {
       continue;
     }
 
-    // 1. Display Math block (\[ ... \] or $$ ... $$)
-    if (trimmed.startsWith('\\[') || trimmed.startsWith('$$')) {
-      const isSingleLine = (trimmed.startsWith('\\[') && trimmed.includes('\\]') && trimmed.length > 3) ||
-                           (trimmed.startsWith('$$') && trimmed.endsWith('$$') && trimmed.length > 4);
+    // 1. Display Math block (\[ ... \] or $$ ... $$) with handling for trailing punctuation (. or ,)
+    const isMathStart = trimmed.startsWith('\\[') || trimmed.startsWith('$$');
+    if (isMathStart) {
+      const isSingleLine = (trimmed.startsWith('\\[') && trimmed.includes('\\]')) ||
+                           (trimmed.startsWith('$$') && trimmed.slice(2).includes('$$'));
 
       if (isSingleLine) {
-        const inner = trimmed.replace(/^(\\\[|\$\$)/, '').replace(/(\\\]|\$\$)$/, '').trim();
+        const inner = trimmed
+          .replace(/^(\\\[|\$\$)/, '')
+          .replace(/(\\\]|\$\$)[.,;]?\s*$/, '')
+          .trim();
         blocks.push({ type: 'display-math', content: inner });
         i++;
         continue;
@@ -255,11 +265,14 @@ export function parseDocumentBlocks(rawLines: string[]): DocumentBlock[] {
         const line = rawLines[i].trim();
         mathLines.push(line);
         i++;
-        if (line.includes('\\]') || line.includes('$$') || line.includes('\\end{array}')) {
+        if (line.includes('\\]') || line.slice(2).includes('$$') || line.includes('\\end{array}')) {
           break;
         }
       }
-      const fullMath = mathLines.join('\n').replace(/^(\\\[|\$\$)/, '').replace(/(\\\]|\$\$)$/, '').trim();
+      const fullMath = mathLines.join('\n')
+        .replace(/^(\\\[|\$\$)/, '')
+        .replace(/(\\\]|\$\$)[.,;]?\s*$/, '')
+        .trim();
       blocks.push({ type: 'display-math', content: fullMath });
       continue;
     }
@@ -268,12 +281,13 @@ export function parseDocumentBlocks(rawLines: string[]): DocumentBlock[] {
     if (trimmed.startsWith('>')) {
       const quoteLines: string[] = [];
       while (i < rawLines.length) {
-        const line = rawLines[i].trim();
-        if (line.startsWith('>') || (quoteLines.length > 0 && (rawLines[i].startsWith('   ') || rawLines[i].startsWith('\t')))) {
-          const stripped = line.startsWith('>') ? line.replace(/^>\s?/, '') : line.trim();
+        const line = rawLines[i];
+        const lineTrimmed = line.trim();
+        if (lineTrimmed.startsWith('>')) {
+          const stripped = lineTrimmed.replace(/^>\s?/, '');
           quoteLines.push(stripped);
           i++;
-        } else if (line === '') {
+        } else if (lineTrimmed === '') {
           if (i + 1 < rawLines.length && rawLines[i + 1].trim().startsWith('>')) {
             quoteLines.push('');
             i++;
@@ -343,82 +357,77 @@ export function parseDocumentBlocks(rawLines: string[]): DocumentBlock[] {
 }
 
 /**
+ * Renders an individual DocumentBlock into clean, scoped HTML
+ */
+export function renderSingleBlockHtml(block: DocumentBlock): string {
+  switch (block.type) {
+    case 'h1':
+      return `
+        <div class="docflow-block docflow-h1 text-xl sm:text-2xl font-extrabold text-blue-900 border-b-2 border-blue-200 pb-2 mt-6 mb-3 text-center">
+          ${parseInlineContent(block.content)}
+        </div>
+      `;
+
+    case 'h2':
+      return `
+        <div class="docflow-block docflow-h2 text-base sm:text-lg font-bold text-blue-800 border-b border-slate-200 pb-1 mt-5 mb-2.5 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-blue-600 shrink-0"></span>
+          <span>${parseInlineContent(block.content)}</span>
+        </div>
+      `;
+
+    case 'h3':
+      return `
+        <div class="docflow-block docflow-h3 text-sm sm:text-base font-bold text-slate-800 mt-3.5 mb-1.5">
+          ${parseInlineContent(block.content)}
+        </div>
+      `;
+
+    case 'hr':
+      return `<div class="docflow-block docflow-hr my-4 border-t border-slate-200"></div>`;
+
+    case 'display-math':
+      return `
+        <div class="docflow-block docflow-math katex-display-center text-center my-3 py-2 px-3 bg-slate-50/90 rounded-xl border border-slate-200/80 shadow-2xs overflow-x-auto">
+          <div class="katex-math-scaler inline-block max-w-full">
+            ${renderKaTeX(block.content, true)}
+          </div>
+        </div>
+      `;
+
+    case 'blockquote':
+      return `
+        <div class="docflow-block docflow-quote my-3 border-l-4 border-indigo-500 bg-indigo-50/70 p-3.5 pl-4 rounded-r-xl shadow-2xs space-y-2">
+          ${block.innerBlocks ? block.innerBlocks.map(renderSingleBlockHtml).join('\n') : ''}
+        </div>
+      `;
+
+    case 'list-item':
+      return `
+        <div class="docflow-block docflow-list ${block.isNested ? 'ml-6' : 'ml-1'} flex items-start gap-2.5 my-1.5 text-xs sm:text-sm text-slate-700 leading-relaxed">
+          <span class="${block.isNested ? 'text-slate-400 font-bold' : 'text-blue-600 font-extrabold'} select-none shrink-0 mt-0.5">
+            ${block.isNested ? '–' : '•'}
+          </span>
+          <div class="flex-1">
+            ${parseInlineContent(block.content)}
+          </div>
+        </div>
+      `;
+
+    case 'paragraph':
+      return `
+        <div class="docflow-block docflow-p my-2 text-xs sm:text-sm text-slate-700 leading-relaxed">
+          ${parseInlineContent(block.content)}
+        </div>
+      `;
+  }
+}
+
+/**
  * Converts a list of DocumentBlocks to clean HTML
  */
 function renderBlocksToHtml(blocks: DocumentBlock[]): string {
-  const parts: string[] = [];
-
-  for (const block of blocks) {
-    switch (block.type) {
-      case 'h1':
-        parts.push(`
-          <h2 class="text-xl sm:text-2xl font-extrabold text-blue-900 border-b-2 border-blue-200 pb-2 mt-8 mb-4 text-center">
-            ${parseInlineContent(block.content)}
-          </h2>
-        `);
-        break;
-
-      case 'h2':
-        parts.push(`
-          <h3 class="text-lg sm:text-xl font-bold text-blue-800 border-b border-slate-200 pb-1.5 mt-6 mb-3 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-blue-600 shrink-0"></span>
-            <span>${parseInlineContent(block.content)}</span>
-          </h3>
-        `);
-        break;
-
-      case 'h3':
-        parts.push(`
-          <h4 class="text-base sm:text-lg font-bold text-slate-800 mt-4 mb-2">
-            ${parseInlineContent(block.content)}
-          </h4>
-        `);
-        break;
-
-      case 'hr':
-        parts.push(`<hr class="my-5 border-slate-200" />`);
-        break;
-
-      case 'display-math':
-        parts.push(`
-          <div class="katex-display-center text-center my-4 py-3 px-4 bg-slate-50/90 rounded-2xl border border-slate-200/80 shadow-2xs overflow-x-auto">
-            ${renderKaTeX(block.content, true)}
-          </div>
-        `);
-        break;
-
-      case 'blockquote':
-        parts.push(`
-          <div class="my-4 border-l-4 border-indigo-500 bg-indigo-50/60 p-4 pl-5 rounded-r-2xl shadow-2xs space-y-2">
-            ${block.innerBlocks ? renderBlocksToHtml(block.innerBlocks) : ''}
-          </div>
-        `);
-        break;
-
-      case 'list-item':
-        parts.push(`
-          <div class="${block.isNested ? 'ml-7' : 'ml-2'} flex items-start gap-2.5 my-1.5 text-xs sm:text-sm text-slate-700 leading-relaxed">
-            <span class="${block.isNested ? 'text-slate-400 font-bold' : 'text-blue-600 font-extrabold'} select-none shrink-0 mt-0.5">
-              ${block.isNested ? '–' : '•'}
-            </span>
-            <div class="flex-1">
-              ${parseInlineContent(block.content)}
-            </div>
-          </div>
-        `);
-        break;
-
-      case 'paragraph':
-        parts.push(`
-          <p class="my-2.5 text-xs sm:text-sm text-slate-700 leading-relaxed">
-            ${parseInlineContent(block.content)}
-          </p>
-        `);
-        break;
-    }
-  }
-
-  return parts.join('\n');
+  return blocks.map(renderSingleBlockHtml).join('\n');
 }
 
 /**
@@ -455,7 +464,7 @@ export function convertLatexToHtml(rawCode: string): string {
   return `
     <div class="docflow-math-document p-6 sm:p-10 max-w-4xl mx-auto bg-white text-slate-900 font-sans leading-relaxed selection:bg-blue-100">
       ${docTitle ? `
-        <header class="doc-header pb-5 mb-6 border-b-2 border-slate-200 text-center">
+        <header class="doc-header pb-4 mb-5 border-b-2 border-slate-200 text-center">
           <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight mb-2">${docTitle}</h1>
           ${(docAuthor || docDate) ? `
             <div class="text-xs sm:text-sm font-medium text-slate-500 flex items-center justify-center gap-3">
@@ -476,79 +485,183 @@ export function convertLatexToHtml(rawCode: string): string {
 
 /**
  * Compiles LaTeX source code or Math Markdown to a standardized PDF document with proper A4 margins and sharp KaTeX formulas
+ * Uses Smart A4 Pagination to prevent equation/line page-split and preserve exact margins across all pages
  */
 export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
-  // 1. Browser runtime: High-resolution Canvas rendering retaining 100% Vietnamese and KaTeX Math with A4 margins
+  // 1. Browser runtime: Smart Multi-Page A4 pagination with sharp KaTeX rendering
   if (typeof document !== 'undefined') {
-    const htmlContent = convertLatexToHtml(code);
+    // Standard A4 dimensions at 96 DPI: 210mm x 297mm -> 794px x 1123px
+    const A4_WIDTH_PX = 794;
+    const A4_HEIGHT_PX = 1123;
+    const PAD_TOP = 48;
+    const PAD_BOTTOM = 44;
+    const PAD_X = 54;
+    const FOOTER_RESERVED = 32;
+    const USABLE_PAGE_HEIGHT = A4_HEIGHT_PX - PAD_TOP - PAD_BOTTOM - FOOTER_RESERVED; // ~999px
+    const TARGET_PAGE_HEIGHT = 960; // Safe threshold preventing edge overflow
 
-    // Create an offscreen render container with standard A4 printable proportions
-    // 794px width (A4 at 96 DPI), with 56px (~18mm) margins
-    const container = document.createElement('div');
-    container.style.position = 'fixed';
-    container.style.top = '-10000px';
-    container.style.left = '-10000px';
-    container.style.width = '794px';
-    container.style.boxSizing = 'border-box';
-    container.style.padding = '48px 56px'; // Proper A4 page margins (16mm top/bottom, 18mm left/right)
-    container.style.backgroundColor = '#ffffff';
-    container.style.color = '#0f172a';
-    container.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-    container.innerHTML = htmlContent;
+    // Normalize code and parse document structure
+    const normalizedCode = code.replace(/\\\\([()[\]])/g, '\\$1');
+    const titleMatch = normalizedCode.match(/\\title\{([^}]+)\}/);
+    const authorMatch = normalizedCode.match(/\\author\{([^}]+)\}/);
+    const dateMatch = normalizedCode.match(/\\date\{([^}]+)\}/);
+    const mdTitleMatch = normalizedCode.match(/^#\s+(.+)$/m);
 
-    document.body.appendChild(container);
+    const docTitle = titleMatch ? titleMatch[1] : (mdTitleMatch ? mdTitleMatch[1].replace(/\*\*/g, '').trim() : '');
+    const docAuthor = authorMatch ? authorMatch[1] : '';
+    const docDate = dateMatch ? (dateMatch[1] === '\\today' ? new Date().toLocaleDateString('vi-VN') : dateMatch[1]) : '';
+
+    const lines = normalizedCode.split('\n');
+    const rawBlocks = parseDocumentBlocks(lines);
+    const filteredBlocks = rawBlocks.filter((b, idx) => {
+      if (idx < 5 && b.type === 'h1' && docTitle && b.content.toLowerCase() === docTitle.toLowerCase()) {
+        return false;
+      }
+      return true;
+    });
+
+    // Build block HTML units
+    const blockHtmlUnits: string[] = [];
+
+    if (docTitle) {
+      blockHtmlUnits.push(`
+        <div class="docflow-block docflow-header pb-4 mb-4 border-b-2 border-slate-200 text-center">
+          <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight mb-2">${docTitle}</h1>
+          ${(docAuthor || docDate) ? `
+            <div class="text-xs font-medium text-slate-500 flex items-center justify-center gap-3">
+              ${docAuthor ? `<span>Tác giả: <strong class="text-slate-700 font-semibold">${docAuthor}</strong></span>` : ''}
+              ${(docAuthor && docDate) ? `<span>•</span>` : ''}
+              ${docDate ? `<span>Ngày: ${docDate}</span>` : ''}
+            </div>
+          ` : ''}
+        </div>
+      `);
+    }
+
+    filteredBlocks.forEach((block) => {
+      blockHtmlUnits.push(renderSingleBlockHtml(block));
+    });
+
+    // Create an invisible in-DOM measurement container
+    const measurer = document.createElement('div');
+    measurer.style.position = 'fixed';
+    measurer.style.left = '0';
+    measurer.style.top = '0';
+    measurer.style.width = `${A4_WIDTH_PX}px`;
+    measurer.style.padding = `0 ${PAD_X}px`;
+    measurer.style.boxSizing = 'border-box';
+    measurer.style.visibility = 'hidden';
+    measurer.style.pointerEvents = 'none';
+    measurer.style.zIndex = '-99999';
+    measurer.style.backgroundColor = '#ffffff';
+    measurer.style.color = '#0f172a';
+    measurer.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+
+    measurer.innerHTML = blockHtmlUnits.map((html, idx) => `
+      <div class="docflow-measure-item" data-idx="${idx}">
+        ${html}
+      </div>
+    `).join('');
+
+    document.body.appendChild(measurer);
+
+    let pages: { blockHtmls: string[] }[] = [];
 
     try {
-      // Ensure all KaTeX fonts are completely loaded and settled before capturing
       if ('fonts' in document) {
         await (document as any).fonts.ready;
       }
       await new Promise((r) => setTimeout(r, 120));
 
-      const fullCanvas = await html2canvas(container, {
-        scale: 2, // 2x Retina resolution for sharp equations
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
+      const measureElements = Array.from(measurer.querySelectorAll('.docflow-measure-item')) as HTMLElement[];
+      const blockHeights = measureElements.map((el) => {
+        const rect = el.getBoundingClientRect();
+        const style = window.getComputedStyle(el);
+        const mt = parseFloat(style.marginTop || '0');
+        const mb = parseFloat(style.marginBottom || '0');
+        return Math.max(20, rect.height + mt + mb);
       });
 
-      const pdfDoc = await PDFDocument.create();
-      const a4WidthPt = 595.28;
-      const a4HeightPt = 841.89;
+      // Auto-scale excessively wide math formulas/tables to fit within page margins
+      const maxContentWidth = A4_WIDTH_PX - (PAD_X * 2);
+      measureElements.forEach((el, idx) => {
+        const mathScaler = el.querySelector('.katex-math-scaler') as HTMLElement | null;
+        if (mathScaler && mathScaler.scrollWidth > maxContentWidth) {
+          const ratio = (maxContentWidth - 8) / mathScaler.scrollWidth;
+          const scaleVal = Math.max(0.68, Math.min(0.98, ratio)).toFixed(3);
+          blockHtmlUnits[idx] = blockHtmlUnits[idx].replace(
+            'class="katex-math-scaler inline-block max-w-full"',
+            `class="katex-math-scaler inline-block" style="transform: scale(${scaleVal}); transform-origin: center top;"`
+          );
+        }
+      });
 
-      const pageCanvasHeight = Math.round(fullCanvas.width * (a4HeightPt / a4WidthPt));
-      const totalPages = Math.max(1, Math.ceil(fullCanvas.height / pageCanvasHeight));
+      // Smart pagination packing algorithm
+      pages = [{ blockHtmls: [] }];
+      let currentHeight = 0;
 
-      for (let p = 0; p < totalPages; p++) {
-        const pageCanvas = document.createElement('canvas');
-        pageCanvas.width = fullCanvas.width;
-        pageCanvas.height = pageCanvasHeight;
-        const pageCtx = pageCanvas.getContext('2d')!;
+      for (let i = 0; i < blockHtmlUnits.length; i++) {
+        const html = blockHtmlUnits[i];
+        const h = blockHeights[i] || 32;
 
-        // Crisp white background
-        pageCtx.fillStyle = '#ffffff';
-        pageCtx.fillRect(0, 0, pageCanvas.width, pageCanvasHeight);
+        const isHeading = html.includes('docflow-h1') || html.includes('docflow-h2') || html.includes('docflow-h3');
+        // Prevent orphan headings at bottom of page
+        const isOrphanHeading = isHeading && (TARGET_PAGE_HEIGHT - currentHeight < 110) && currentHeight > 0;
 
-        const srcY = p * pageCanvasHeight;
-        const srcH = Math.min(pageCanvasHeight, fullCanvas.height - srcY);
+        if ((currentHeight + h > TARGET_PAGE_HEIGHT || isOrphanHeading) && pages[pages.length - 1].blockHtmls.length > 0) {
+          pages.push({ blockHtmls: [] });
+          currentHeight = 0;
+        }
 
-        pageCtx.drawImage(
-          fullCanvas,
-          0,
-          srcY,
-          fullCanvas.width,
-          srcH,
-          0,
-          0,
-          fullCanvas.width,
-          srcH
-        );
+        pages[pages.length - 1].blockHtmls.push(html);
+        currentHeight += h;
+      }
+    } finally {
+      document.body.removeChild(measurer);
+    }
 
-        // Footer page numbering
-        pageCtx.font = '22px sans-serif';
-        pageCtx.fillStyle = '#94a3b8';
-        pageCtx.textAlign = 'center';
-        pageCtx.fillText(`Trang ${p + 1} / ${totalPages}`, pageCanvas.width / 2, pageCanvasHeight - 24);
+    // Render individual A4 pages and compile into final PDF
+    const pdfDoc = await PDFDocument.create();
+    const a4WidthPt = 595.28;
+    const a4HeightPt = 841.89;
+    const totalPages = Math.max(1, pages.length);
+
+    for (let p = 0; p < totalPages; p++) {
+      const pageData = pages[p] || { blockHtmls: [] };
+      const pageContainer = document.createElement('div');
+      pageContainer.style.position = 'fixed';
+      pageContainer.style.left = '0';
+      pageContainer.style.top = '0';
+      pageContainer.style.width = `${A4_WIDTH_PX}px`;
+      pageContainer.style.height = `${A4_HEIGHT_PX}px`;
+      pageContainer.style.padding = `${PAD_TOP}px ${PAD_X}px ${PAD_BOTTOM}px ${PAD_X}px`;
+      pageContainer.style.boxSizing = 'border-box';
+      pageContainer.style.backgroundColor = '#ffffff';
+      pageContainer.style.color = '#0f172a';
+      pageContainer.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+      pageContainer.style.zIndex = '-99999';
+      pageContainer.style.overflow = 'hidden';
+
+      pageContainer.innerHTML = `
+        <div style="height: ${USABLE_PAGE_HEIGHT}px; overflow: hidden; display: flex; flex-direction: column;">
+          ${pageData.blockHtmls.join('\n')}
+        </div>
+        <div style="position: absolute; bottom: 16px; left: 0; right: 0; text-align: center; font-size: 11px; color: #94a3b8; font-family: -apple-system, BlinkMacSystemFont, sans-serif;">
+          Trang ${p + 1} / ${totalPages}
+        </div>
+      `;
+
+      document.body.appendChild(pageContainer);
+
+      try {
+        const pageCanvas = await html2canvas(pageContainer, {
+          scale: 2, // 2x Retina resolution
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+          windowWidth: A4_WIDTH_PX,
+          windowHeight: A4_HEIGHT_PX,
+        });
 
         const dataUrl = pageCanvas.toDataURL('image/png');
         const imgBytes = await (await fetch(dataUrl)).arrayBuffer();
@@ -561,12 +674,12 @@ export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
           width: a4WidthPt,
           height: a4HeightPt,
         });
+      } finally {
+        document.body.removeChild(pageContainer);
       }
-
-      return await pdfDoc.save();
-    } finally {
-      document.body.removeChild(container);
     }
+
+    return await pdfDoc.save();
   }
 
   // 2. Headless fallback for Node environments (test suites)

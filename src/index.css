@@ -33,7 +33,7 @@
   outline-offset: 2px;
 }
 
-/* KaTeX math enhancements */
+/* KaTeX math enhancements & Canvas/Print layout */
 .katex-display {
   margin: 0.6em 0 !important;
   text-align: center !important;
@@ -46,5 +46,49 @@
 }
 .katex-display > .katex {
   text-align: center !important;
+}
+
+/* Fix KaTeX fraction line vanishing or offset in canvas/print */
+.katex .frac-line {
+  border-bottom-width: 1.5px !important;
+  min-height: 1.5px !important;
+}
+
+/* Hide MathML in canvas/render to prevent double-drawn overlapping text */
+.katex .katex-mathml {
+  display: none !important;
+}
+.katex .katex-html {
+  display: inline-block !important;
+}
+
+/* Ensure text inside KaTeX inherits standard font */
+.katex .text {
+  font-family: inherit !important;
+}
+
+/* Print pagination rules */
+@media print {
+  @page {
+    size: A4;
+    margin: 18mm 16mm;
+  }
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .docflow-block, .katex-display-center, .docflow-quote, .math-block-item {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  h1, h2, h3, h4, .docflow-h1, .docflow-h2, .docflow-h3 {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
 }
 
