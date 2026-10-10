@@ -386,29 +386,68 @@ export function renderSingleBlockHtml(block: DocumentBlock): string {
     case 'hr':
       return `<div class="docflow-block docflow-hr my-4 border-t border-slate-200"></div>`;
 
-    case 'display-math':
+    case 'display-math': {
+      const content = block.content.trim();
+      const isArrayTable = content.includes('\\begin{array}') || content.includes('\\begin{matrix}') || content.includes('\\begin{tabular}');
+
+      // 1. Array Table / Matrix: Auto-scale font size to 0.78em so 5-column sign tables fit A4 perfectly without clipping
+      if (isArrayTable) {
+        return `
+          <div class="docflow-block docflow-math katex-display-center text-center my-3 py-2.5 px-2 bg-slate-50/90 rounded-xl border border-slate-200/80 shadow-2xs overflow-hidden" style="font-size: 0.78em; line-height: 1.25;">
+            <div class="katex-table-wrap inline-block max-w-full">
+              ${renderKaTeX(content, true)}
+            </div>
+          </div>
+        `;
+      }
+
+      // 2. Multi-part formulas joined by \quad or \qquad (e.g. 4 trigonometric angle reduction formulas)
+      const hasMultipleParts = content.includes('\\quad') || content.includes('\\qquad');
+      if (hasMultipleParts) {
+        const parts = content
+          .split(/(?:,\s*\\quad|;\s*\\quad|\s*\\quad\s*|\s*\\qquad\s*)/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+        if (parts.length > 1) {
+          return `
+            <div class="docflow-block docflow-math katex-display-center text-center my-3 py-2.5 px-3 bg-slate-50/90 rounded-xl border border-slate-200/80 shadow-2xs">
+              <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 max-w-full">
+                ${parts.map((p, idx) => {
+                  const hasComma = idx < parts.length - 1 && !p.endsWith(',') && !p.endsWith(';');
+                  return `<span class="inline-block">${renderKaTeX(hasComma ? p + ',' : p, false)}</span>`;
+                }).join('')}
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // 3. Other single formulas: scale down slightly if very long to prevent edge clipping
+      const isLongFormula = content.length > 55;
       return `
-        <div class="docflow-block docflow-math katex-display-center text-center my-3 py-2 px-3 bg-slate-50/90 rounded-xl border border-slate-200/80 shadow-2xs overflow-x-auto">
+        <div class="docflow-block docflow-math katex-display-center text-center my-3 py-2 px-3 bg-slate-50/90 rounded-xl border border-slate-200/80 shadow-2xs overflow-hidden" ${isLongFormula ? 'style="font-size: 0.88em;"' : ''}>
           <div class="katex-math-scaler inline-block max-w-full">
-            ${renderKaTeX(block.content, true)}
+            ${renderKaTeX(content, true)}
           </div>
         </div>
       `;
+    }
 
     case 'blockquote':
       return `
-        <div class="docflow-block docflow-quote my-3 border-l-4 border-indigo-500 bg-indigo-50/70 p-3.5 pl-4 rounded-r-xl shadow-2xs space-y-2">
+        <div class="docflow-block docflow-quote my-3 border-l-4 border-indigo-500 bg-indigo-50/70 p-3.5 pl-4 rounded-r-xl shadow-2xs space-y-2 max-w-full">
           ${block.innerBlocks ? block.innerBlocks.map(renderSingleBlockHtml).join('\n') : ''}
         </div>
       `;
 
     case 'list-item':
       return `
-        <div class="docflow-block docflow-list ${block.isNested ? 'ml-6' : 'ml-1'} flex items-start gap-2.5 my-1.5 text-xs sm:text-sm text-slate-700 leading-relaxed">
+        <div class="docflow-block docflow-list ${block.isNested ? 'ml-6' : 'ml-1'} flex items-start gap-2.5 my-1.5 text-xs sm:text-sm text-slate-700 leading-relaxed max-w-full">
           <span class="${block.isNested ? 'text-slate-400 font-bold' : 'text-blue-600 font-extrabold'} select-none shrink-0 mt-0.5">
             ${block.isNested ? '–' : '•'}
           </span>
-          <div class="flex-1">
+          <div class="flex-1 break-words">
             ${parseInlineContent(block.content)}
           </div>
         </div>
@@ -416,7 +455,7 @@ export function renderSingleBlockHtml(block: DocumentBlock): string {
 
     case 'paragraph':
       return `
-        <div class="docflow-block docflow-p my-2 text-xs sm:text-sm text-slate-700 leading-relaxed">
+        <div class="docflow-block docflow-p my-2 text-xs sm:text-sm text-slate-700 leading-relaxed break-words max-w-full">
           ${parseInlineContent(block.content)}
         </div>
       `;
@@ -485,20 +524,19 @@ export function convertLatexToHtml(rawCode: string): string {
 
 /**
  * Compiles LaTeX source code or Math Markdown to a standardized PDF document with proper A4 margins and sharp KaTeX formulas
- * Uses Smart A4 Pagination to prevent equation/line page-split and preserve exact margins across all pages
+ * Uses Dynamic Live-DOM Pagination to ensure content moves to next page when needed without ever cropping bottom text
  */
 export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
-  // 1. Browser runtime: Smart Multi-Page A4 pagination with sharp KaTeX rendering
+  // 1. Browser runtime: Dynamic Real-DOM Pagination with sharp KaTeX rendering
   if (typeof document !== 'undefined') {
     // Standard A4 dimensions at 96 DPI: 210mm x 297mm -> 794px x 1123px
     const A4_WIDTH_PX = 794;
     const A4_HEIGHT_PX = 1123;
-    const PAD_TOP = 48;
+    const PAD_TOP = 44;
     const PAD_BOTTOM = 44;
     const PAD_X = 54;
-    const FOOTER_RESERVED = 32;
-    const USABLE_PAGE_HEIGHT = A4_HEIGHT_PX - PAD_TOP - PAD_BOTTOM - FOOTER_RESERVED; // ~999px
-    const TARGET_PAGE_HEIGHT = 960; // Safe threshold preventing edge overflow
+    // Safe vertical threshold: 880px allows ~150px bottom breathing room before footer, eliminating edge cropping
+    const MAX_PAGE_CONTENT_HEIGHT = 880;
 
     // Normalize code and parse document structure
     const normalizedCode = code.replace(/\\\\([()[\]])/g, '\\$1');
@@ -542,30 +580,29 @@ export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
       blockHtmlUnits.push(renderSingleBlockHtml(block));
     });
 
-    // Create an invisible in-DOM measurement container
-    const measurer = document.createElement('div');
-    measurer.style.position = 'fixed';
-    measurer.style.left = '0';
-    measurer.style.top = '0';
-    measurer.style.width = `${A4_WIDTH_PX}px`;
-    measurer.style.padding = `0 ${PAD_X}px`;
-    measurer.style.boxSizing = 'border-box';
-    measurer.style.visibility = 'hidden';
-    measurer.style.pointerEvents = 'none';
-    measurer.style.zIndex = '-99999';
-    measurer.style.backgroundColor = '#ffffff';
-    measurer.style.color = '#0f172a';
-    measurer.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+    // Create a live pagination testing container matching exact A4 dimensions
+    const patherContainer = document.createElement('div');
+    patherContainer.style.position = 'fixed';
+    patherContainer.style.left = '0';
+    patherContainer.style.top = '0';
+    patherContainer.style.width = `${A4_WIDTH_PX}px`;
+    patherContainer.style.padding = `${PAD_TOP}px ${PAD_X}px ${PAD_BOTTOM}px ${PAD_X}px`;
+    patherContainer.style.boxSizing = 'border-box';
+    patherContainer.style.visibility = 'hidden';
+    patherContainer.style.pointerEvents = 'none';
+    patherContainer.style.zIndex = '-99999';
+    patherContainer.style.backgroundColor = '#ffffff';
+    patherContainer.style.color = '#0f172a';
+    patherContainer.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 
-    measurer.innerHTML = blockHtmlUnits.map((html, idx) => `
-      <div class="docflow-measure-item" data-idx="${idx}">
-        ${html}
-      </div>
-    `).join('');
+    const testContentWrapper = document.createElement('div');
+    testContentWrapper.style.display = 'flex';
+    testContentWrapper.style.flexDirection = 'column';
+    testContentWrapper.style.width = '100%';
+    patherContainer.appendChild(testContentWrapper);
+    document.body.appendChild(patherContainer);
 
-    document.body.appendChild(measurer);
-
-    let pages: { blockHtmls: string[] }[] = [];
+    let pages: { blockHtmls: string[] }[] = [{ blockHtmls: [] }];
 
     try {
       if ('fonts' in document) {
@@ -573,54 +610,33 @@ export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
       }
       await new Promise((r) => setTimeout(r, 120));
 
-      const measureElements = Array.from(measurer.querySelectorAll('.docflow-measure-item')) as HTMLElement[];
-      const blockHeights = measureElements.map((el) => {
-        const rect = el.getBoundingClientRect();
-        const style = window.getComputedStyle(el);
-        const mt = parseFloat(style.marginTop || '0');
-        const mb = parseFloat(style.marginBottom || '0');
-        return Math.max(20, rect.height + mt + mb);
-      });
-
-      // Auto-scale excessively wide math formulas/tables to fit within page margins
-      const maxContentWidth = A4_WIDTH_PX - (PAD_X * 2);
-      measureElements.forEach((el, idx) => {
-        const mathScaler = el.querySelector('.katex-math-scaler') as HTMLElement | null;
-        if (mathScaler && mathScaler.scrollWidth > maxContentWidth) {
-          const ratio = (maxContentWidth - 8) / mathScaler.scrollWidth;
-          const scaleVal = Math.max(0.68, Math.min(0.98, ratio)).toFixed(3);
-          blockHtmlUnits[idx] = blockHtmlUnits[idx].replace(
-            'class="katex-math-scaler inline-block max-w-full"',
-            `class="katex-math-scaler inline-block" style="transform: scale(${scaleVal}); transform-origin: center top;"`
-          );
-        }
-      });
-
-      // Smart pagination packing algorithm
-      pages = [{ blockHtmls: [] }];
-      let currentHeight = 0;
-
       for (let i = 0; i < blockHtmlUnits.length; i++) {
-        const html = blockHtmlUnits[i];
-        const h = blockHeights[i] || 32;
+        const blockHtml = blockHtmlUnits[i];
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = blockHtml;
+        const blockEl = tempDiv.firstElementChild as HTMLElement || tempDiv;
 
-        const isHeading = html.includes('docflow-h1') || html.includes('docflow-h2') || html.includes('docflow-h3');
-        // Prevent orphan headings at bottom of page
-        const isOrphanHeading = isHeading && (TARGET_PAGE_HEIGHT - currentHeight < 110) && currentHeight > 0;
+        testContentWrapper.appendChild(blockEl);
 
-        if ((currentHeight + h > TARGET_PAGE_HEIGHT || isOrphanHeading) && pages[pages.length - 1].blockHtmls.length > 0) {
+        const isHeading = blockHtml.includes('docflow-h1') || blockHtml.includes('docflow-h2') || blockHtml.includes('docflow-h3');
+        const currentWrapperHeight = testContentWrapper.scrollHeight;
+        const isHeadingNearBottom = isHeading && (MAX_PAGE_CONTENT_HEIGHT - currentWrapperHeight < 110) && pages[pages.length - 1].blockHtmls.length > 0;
+
+        // If block causes overflow or heading is stranded at bottom, move entire block to next page
+        if ((currentWrapperHeight > MAX_PAGE_CONTENT_HEIGHT || isHeadingNearBottom) && pages[pages.length - 1].blockHtmls.length > 0) {
+          testContentWrapper.removeChild(blockEl);
           pages.push({ blockHtmls: [] });
-          currentHeight = 0;
+          testContentWrapper.innerHTML = '';
+          testContentWrapper.appendChild(blockEl);
         }
 
-        pages[pages.length - 1].blockHtmls.push(html);
-        currentHeight += h;
+        pages[pages.length - 1].blockHtmls.push(blockHtml);
       }
     } finally {
-      document.body.removeChild(measurer);
+      document.body.removeChild(patherContainer);
     }
 
-    // Render individual A4 pages and compile into final PDF
+    // Render individual A4 pages and compile into final PDF with zero cropping
     const pdfDoc = await PDFDocument.create();
     const a4WidthPt = 595.28;
     const a4HeightPt = 841.89;
@@ -640,10 +656,11 @@ export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
       pageContainer.style.color = '#0f172a';
       pageContainer.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
       pageContainer.style.zIndex = '-99999';
-      pageContainer.style.overflow = 'hidden';
+      pageContainer.style.position = 'relative';
 
+      // Clean unclipped page layout with dedicated footer
       pageContainer.innerHTML = `
-        <div style="height: ${USABLE_PAGE_HEIGHT}px; overflow: hidden; display: flex; flex-direction: column;">
+        <div style="display: flex; flex-direction: column; width: 100%; min-height: 0;">
           ${pageData.blockHtmls.join('\n')}
         </div>
         <div style="position: absolute; bottom: 16px; left: 0; right: 0; text-align: center; font-size: 11px; color: #94a3b8; font-family: -apple-system, BlinkMacSystemFont, sans-serif;">
