@@ -33,56 +33,338 @@
   outline-offset: 2px;
 }
 
-/* KaTeX math enhancements & Canvas/Print layout */
+/* KaTeX math enhancements */
 .katex-display {
-  margin: 0.6em 0 !important;
+  margin: 0.8em 0 !important;
   text-align: center !important;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: visible !important;
 }
+
 .katex {
   font-size: 1.05em;
   text-rendering: geometricPrecision;
 }
-.katex-display > .katex {
-  text-align: center !important;
-}
 
-/* Fix KaTeX fraction line vanishing or offset in canvas/print */
 .katex .frac-line {
   border-bottom-width: 1.5px !important;
   min-height: 1.5px !important;
+  transform: translateZ(0);
 }
 
-/* Hide MathML in canvas/render to prevent double-drawn overlapping text */
 .katex .katex-mathml {
   display: none !important;
 }
+
 .katex .katex-html {
   display: inline-block !important;
 }
 
-/* Ensure text inside KaTeX inherits standard font */
 .katex .text {
   font-family: inherit !important;
+}
+
+/* DocFlow Unified LaTeX Document Styles */
+.docflow-container {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  font-size: 11pt;
+  line-height: 1.65;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+  color: #0f172a;
+}
+
+.docflow-h1 {
+  font-size: 1.85em;
+  font-weight: 800;
+  color: #1e293b;
+  margin: 1.2em 0 0.4em 0;
+  padding-bottom: 0.25em;
+  border-bottom: 2px solid #e2e8f0;
+  text-align: center;
+}
+
+.docflow-h2 {
+  font-size: 1.35em;
+  font-weight: 700;
+  color: #1e3a8a;
+  margin: 1.1em 0 0.35em 0;
+  padding-bottom: 0.2em;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.docflow-h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+  color: #334155;
+  margin: 0.9em 0 0.3em 0;
+}
+
+.docflow-p {
+  margin: 0.6em 0;
+  line-height: 1.65;
+  text-align: justify;
+}
+
+.docflow-header {
+  text-align: center;
+  margin-bottom: 2em;
+  padding-bottom: 1.2em;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.docflow-title {
+  font-size: 2.1em;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 0.3em 0;
+  line-height: 1.25;
+}
+
+.docflow-meta {
+  font-size: 0.9em;
+  color: #64748b;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1.5em;
+  flex-wrap: wrap;
+}
+
+.docflow-math-display {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0.8em 0;
+  padding: 0.6em 0.8em;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  text-align: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.docflow-autofit-wrap {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 1em 0;
+  position: relative;
+}
+
+.docflow-table-wrapper {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 1em 0;
+  overflow-x: auto;
+}
+
+.docflow-table {
+  width: 100%;
+  max-width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+  box-sizing: border-box;
+  font-size: 0.92em;
+  margin: 0 auto;
+}
+
+.docflow-table th,
+.docflow-table td {
+  padding: 8px 12px;
+  border: 1px solid #cbd5e1;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+.docflow-table th {
+  background-color: #f1f5f9;
+  font-weight: 700;
+  color: #1e293b;
+  text-align: center;
+}
+
+.docflow-table-caption {
+  caption-side: top;
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 0.6em;
+  font-size: 0.95em;
+  text-align: center;
+}
+
+.docflow-table-booktabs {
+  border-top: 2px solid #0f172a !important;
+  border-bottom: 2px solid #0f172a !important;
+  border-left: none !important;
+  border-right: none !important;
+}
+
+.docflow-table-booktabs th {
+  border-top: none !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: 1.5px solid #0f172a !important;
+  background-color: transparent !important;
+}
+
+.docflow-table-booktabs td {
+  border: none !important;
+  border-bottom: 1px solid #f1f5f9 !important;
+}
+
+.docflow-table-booktabs tr:nth-child(even) td {
+  background-color: transparent !important;
+}
+
+.docflow-table-align-left { text-align: left; }
+.docflow-table-align-center { text-align: center; }
+.docflow-table-align-right { text-align: right; }
+
+.docflow-quote {
+  margin: 1em 0;
+  padding: 0.8em 1.2em;
+  border-left: 4px solid #6366f1;
+  background-color: #f5f3ff;
+  border-radius: 0 8px 8px 0;
+  box-sizing: border-box;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.docflow-callout {
+  margin: 1.1em 0;
+  padding: 1em 1.2em;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  box-sizing: border-box;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.docflow-callout-header {
+  font-weight: 700;
+  margin-bottom: 0.4em;
+  font-size: 0.95em;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.docflow-callout-theorem {
+  background-color: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1e3a8a;
+}
+.docflow-callout-theorem .docflow-callout-header { color: #1d4ed8; }
+
+.docflow-callout-definition {
+  background-color: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #14532d;
+}
+.docflow-callout-definition .docflow-callout-header { color: #15803d; }
+
+.docflow-callout-proof {
+  background-color: #f8fafc;
+  border-color: #e2e8f0;
+  font-style: italic;
+}
+.docflow-callout-proof .docflow-callout-header { font-style: normal; color: #475569; }
+
+.docflow-code {
+  background-color: #0f172a;
+  color: #f8fafc;
+  padding: 1em;
+  border-radius: 8px;
+  font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+  font-size: 0.88em;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+
+.docflow-inline-code {
+  background-color: #f1f5f9;
+  color: #0f172a;
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 0.9em;
+  border: 1px solid #e2e8f0;
+}
+
+.docflow-list-ordered,
+.docflow-list-unordered {
+  margin: 0.6em 0;
+  padding-left: 1.8em;
+}
+
+.docflow-list-ordered li,
+.docflow-list-unordered li {
+  margin: 0.35em 0;
+  line-height: 1.6;
+}
+
+.docflow-warning {
+  margin: 0.8em 0;
+  padding: 0.7em 1em;
+  background-color: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  color: #92400e;
+  font-size: 0.88em;
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+}
+
+.docflow-fit-warning {
+  margin-top: 4px;
+  padding: 4px 8px;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  font-size: 11px;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.docflow-hr {
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+  margin: 1.5em 0;
 }
 
 /* Print pagination rules */
 @media print {
   @page {
-    size: A4;
-    margin: 18mm 16mm;
+    size: A4 portrait;
+    margin: 20mm 18mm;
   }
-  body {
+  html, body {
     background: #ffffff !important;
     color: #0f172a !important;
-    padding: 0 !important;
+    width: 100% !important;
     margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
   .no-print {
     display: none !important;
   }
-  .docflow-block, .katex-display-center, .docflow-quote, .math-block-item {
+  p, div, li, blockquote {
+    orphans: 3;
+    widows: 3;
+  }
+  tr, .docflow-avoid-break, .docflow-short-box {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
   }
@@ -90,5 +372,13 @@
     break-after: avoid !important;
     page-break-after: avoid !important;
   }
+  .docflow-quote, .docflow-callout {
+    break-inside: auto !important;
+  }
+  thead {
+    display: table-header-group !important;
+  }
+  tfoot {
+    display: table-footer-group !important;
+  }
 }
-

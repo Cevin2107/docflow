@@ -1,6 +1,7 @@
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import { DocPage, PageNumberOptions, WatermarkOptions, SignatureItem } from '../types/document';
 import { removeDiacritics } from '../utils/formatters';
+import { generateWatermarkPngBytes, resolveTargetPages } from './watermarkRenderer';
 
 /**
  * Compiles a new PDF from a list of DocPage objects and a lookup of source document buffers.
@@ -273,34 +274,34 @@ export async function addWatermarkToPdf(
   options: WatermarkOptions
 ): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.load(data);
-  const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const pages = pdfDoc.getPages();
+  const targetIndices = new Set(resolveTargetPages(pages.length, options));
 
-  const hex = options.color.replace('#', '');
-  const r = parseInt(hex.substring(0, 2), 16) / 255 || 0.8;
-  const g = parseInt(hex.substring(2, 4), 16) / 255 || 0.2;
-  const b = parseInt(hex.substring(4, 6), 16) / 255 || 0.2;
+  // Pre-generate watermark PNG if all target pages share the same size, or generate per unique size
+  const pngCache = new Map<string, any>();
 
-  const safeWatermark = removeDiacritics(options.text);
-
-  pages.forEach((page, idx) => {
-    if (!options.applyToAll && !options.targetPages.includes(idx)) {
-      return;
+  for (let idx = 0; idx < pages.length; idx++) {
+    if (!targetIndices.has(idx)) {
+      continue;
     }
+    const page = pages[idx];
     const { width, height } = page.getSize();
-    const textWidth = font.widthOfTextAtSize(safeWatermark, options.fontSize);
-    const textHeight = font.heightAtSize(options.fontSize);
+    const sizeKey = `${Math.round(width)}x${Math.round(height)}`;
 
-    page.drawText(safeWatermark, {
-      x: width / 2 - textWidth / 2,
-      y: height / 2 - textHeight / 2,
-      size: options.fontSize,
-      font,
-      color: rgb(r, g, b),
-      opacity: options.opacity,
-      rotate: degrees(options.rotation),
+    let watermarkImage = pngCache.get(sizeKey);
+    if (!watermarkImage) {
+      const pngBytes = await generateWatermarkPngBytes(width, height, options);
+      watermarkImage = await pdfDoc.embedPng(pngBytes);
+      pngCache.set(sizeKey, watermarkImage);
+    }
+
+    page.drawImage(watermarkImage, {
+      x: 0,
+      y: 0,
+      width,
+      height,
     });
-  });
+  }
 
   return await pdfDoc.save();
 }

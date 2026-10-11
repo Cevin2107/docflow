@@ -85,7 +85,16 @@ export interface EditAnnotation {
   fontSize?: number;
 }
 
+export type WatermarkType = 'text' | 'stamp' | 'image';
+export type WatermarkLayoutMode = 'single' | 'tiled';
+export type WatermarkPosition = 'center' | 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right';
+export type WatermarkFontFamily = 'sans-serif' | 'serif' | 'monospace' | 'Impact';
+export type WatermarkRenderStyle = 'fill' | 'stroke' | 'both';
+export type WatermarkStampBorder = 'none' | 'single' | 'double' | 'dashed';
+export type WatermarkPageScope = 'all' | 'custom' | 'odd' | 'even' | 'first';
+
 export interface WatermarkOptions {
+  type?: WatermarkType;
   text: string;
   fontSize: number;
   color: string;
@@ -93,6 +102,27 @@ export interface WatermarkOptions {
   rotation: number;
   applyToAll: boolean;
   targetPages: number[];
+
+  // Advanced features
+  mode?: WatermarkLayoutMode; // 'single' | 'tiled'
+  tiledSpacing?: number; // Distance between tiled items
+  position?: WatermarkPosition; // Position for single mode
+  fontFamily?: WatermarkFontFamily;
+  isBold?: boolean;
+  isItalic?: boolean;
+  renderStyle?: WatermarkRenderStyle; // 'fill' | 'stroke' | 'both'
+  strokeWidth?: number;
+
+  // Stamp features
+  stampBorder?: WatermarkStampBorder;
+
+  // Image / Logo watermark features
+  imageDataUrl?: string;
+  imageScale?: number; // 0.1 to 1.5
+
+  // Page scoping
+  pageScope?: WatermarkPageScope;
+  customPageRange?: string; // e.g. "1, 3-5"
 }
 
 export interface PageNumberOptions {

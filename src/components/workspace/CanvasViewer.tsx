@@ -18,6 +18,7 @@ import {
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { loadPdfDocument, renderPageToCanvas, getPageDimensions } from '../../services/pdfWorker';
 import { SignatureItem } from '../../types/document';
+import { drawWatermarkOnCanvas, resolveTargetPages } from '../../services/watermarkRenderer';
 
 interface CanvasViewerProps {
   pendingSignature?: SignatureItem | null;
@@ -48,6 +49,7 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
   } = useWorkspace();
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const watermarkCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const activeRenderTaskRef = useRef<any>(null);
 
@@ -173,6 +175,37 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
       }
     };
   }, [document, currentPage?.pageId, currentPage?.rotation, sourceDocs, zoom]);
+
+  // Live Unified Watermark Canvas Overlay Preview
+  useEffect(() => {
+    if (activeTool !== 'watermark' || !watermarkPreview || !canvasRef.current || !watermarkCanvasRef.current || !document) {
+      if (watermarkCanvasRef.current) {
+        const ctx = watermarkCanvasRef.current.getContext('2d');
+        ctx?.clearRect(0, 0, watermarkCanvasRef.current.width, watermarkCanvasRef.current.height);
+      }
+      return;
+    }
+
+    const mainCanvas = canvasRef.current;
+    const wmCanvas = watermarkCanvasRef.current;
+
+    const targetPages = resolveTargetPages(document.pages.length, watermarkPreview, activePageIndex);
+    const shouldShow = targetPages.includes(activePageIndex);
+
+    if (!shouldShow) {
+      const ctx = wmCanvas.getContext('2d');
+      ctx?.clearRect(0, 0, wmCanvas.width, wmCanvas.height);
+      return;
+    }
+
+    // Match physical pixel size with main page canvas
+    if (wmCanvas.width !== mainCanvas.width || wmCanvas.height !== mainCanvas.height) {
+      wmCanvas.width = mainCanvas.width;
+      wmCanvas.height = mainCanvas.height;
+    }
+
+    drawWatermarkOnCanvas(wmCanvas, wmCanvas.width, wmCanvas.height, watermarkPreview, zoom);
+  }, [activeTool, watermarkPreview, activePageIndex, zoom, isRendering, document]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -395,24 +428,12 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
               </div>
             )}
 
-            {/* Live Watermark Overlay Preview */}
-            {activeTool === 'watermark' && watermarkPreview && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden select-none z-20">
-                <span
-                  style={{
-                    transform: `rotate(${watermarkPreview.rotation || -45}deg)`,
-                    fontSize: `${Math.max(22, watermarkPreview.fontSize * zoom * 0.75)}px`,
-                    color: watermarkPreview.color || '#ef4444',
-                    opacity: watermarkPreview.opacity || 0.25,
-                    fontWeight: 800,
-                    letterSpacing: '0.1em',
-                    textAlign: 'center',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  {watermarkPreview.text || 'BẢN QUYỀN'}
-                </span>
-              </div>
+            {/* Live Watermark Canvas Overlay Preview */}
+            {activeTool === 'watermark' && (
+              <canvas
+                ref={watermarkCanvasRef}
+                className="absolute inset-0 w-full h-full pointer-events-none z-20"
+              />
             )}
 
             {/* Live Page Number Overlay Preview */}

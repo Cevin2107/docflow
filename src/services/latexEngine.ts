@@ -1,8 +1,16 @@
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { Document, Paragraph, TextRun, HeadingLevel, Packer } from 'docx';
-import { removeDiacritics } from '../utils/formatters';
+import { removeDiacritics } from '../utils/formatters.ts';
 import katex from 'katex';
 import html2canvas from 'html2canvas';
+import { 
+  generateDocumentBodyHtml, 
+  generateDocumentHtml, 
+  parseLatexDocument 
+} from '../shared/latex/index.ts';
+
+export { generateDocumentBodyHtml, generateDocumentHtml, parseLatexDocument };
+
 
 export interface LatexCompileError {
   line: number;
@@ -471,55 +479,11 @@ function renderBlocksToHtml(blocks: DocumentBlock[]): string {
 
 /**
  * Converts any LaTeX, Markdown, or Math text into beautiful, semantic HTML
+ * Uses the unified parser & HTML generator shared with the PDF engine
  */
 export function convertLatexToHtml(rawCode: string): string {
   if (!rawCode) return '';
-
-  // Normalize escaped backslashes in math delimiters (\\( -> \(, \\[ -> \[, etc.)
-  let code = rawCode.replace(/\\\\([()[\]])/g, '\\$1');
-
-  const titleMatch = code.match(/\\title\{([^}]+)\}/);
-  const authorMatch = code.match(/\\author\{([^}]+)\}/);
-  const dateMatch = code.match(/\\date\{([^}]+)\}/);
-  const mdTitleMatch = code.match(/^#\s+(.+)$/m);
-
-  const docTitle = titleMatch ? titleMatch[1] : (mdTitleMatch ? mdTitleMatch[1].replace(/\*\*/g, '').trim() : '');
-  const docAuthor = authorMatch ? authorMatch[1] : '';
-  const docDate = dateMatch ? (dateMatch[1] === '\\today' ? new Date().toLocaleDateString('vi-VN') : dateMatch[1]) : '';
-
-  const lines = code.split('\n');
-  const blocks = parseDocumentBlocks(lines);
-
-  // Filter out duplicate top-level title if present in blocks
-  const filteredBlocks = blocks.filter((b, idx) => {
-    if (idx < 5 && b.type === 'h1' && docTitle && b.content.toLowerCase() === docTitle.toLowerCase()) {
-      return false;
-    }
-    return true;
-  });
-
-  const bodyHtml = renderBlocksToHtml(filteredBlocks);
-
-  return `
-    <div class="docflow-math-document p-6 sm:p-10 max-w-4xl mx-auto bg-white text-slate-900 font-sans leading-relaxed selection:bg-blue-100">
-      ${docTitle ? `
-        <header class="doc-header pb-4 mb-5 border-b-2 border-slate-200 text-center">
-          <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight mb-2">${docTitle}</h1>
-          ${(docAuthor || docDate) ? `
-            <div class="text-xs sm:text-sm font-medium text-slate-500 flex items-center justify-center gap-3">
-              ${docAuthor ? `<span>Tác giả: <strong class="text-slate-700 font-semibold">${docAuthor}</strong></span>` : ''}
-              ${(docAuthor && docDate) ? `<span>•</span>` : ''}
-              ${docDate ? `<span>Ngày: ${docDate}</span>` : ''}
-            </div>
-          ` : ''}
-        </header>
-      ` : ''}
-
-      <div class="docflow-content space-y-1">
-        ${bodyHtml}
-      </div>
-    </div>
-  `;
+  return generateDocumentBodyHtml(rawCode);
 }
 
 /**
@@ -527,7 +491,20 @@ export function convertLatexToHtml(rawCode: string): string {
  * Uses Dynamic Live-DOM Pagination to ensure content moves to next page when needed without ever cropping bottom text
  */
 export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
-  // 1. Browser runtime: Dynamic Real-DOM Pagination with sharp KaTeX rendering
+  // 1. Primary: Standalone Headless Chromium PDF Service
+  try {
+    const { renderLatexViaService } = await import('./pdfServiceClient.ts');
+    return await renderLatexViaService(code, {
+      paperSize: 'A4',
+      orientation: 'portrait',
+      margins: { top: '20mm', bottom: '18mm', left: '18mm', right: '18mm' },
+      fontSize: '11pt',
+    });
+  } catch (serviceErr) {
+    console.warn('PDF Service không phản hồi, chuyển sang fallback client-side:', serviceErr);
+  }
+
+  // 2. Browser runtime: Dynamic Real-DOM Pagination with sharp KaTeX rendering
   if (typeof document !== 'undefined') {
     // Standard A4 dimensions at 96 DPI: 210mm x 297mm -> 794px x 1123px
     const A4_WIDTH_PX = 794;
