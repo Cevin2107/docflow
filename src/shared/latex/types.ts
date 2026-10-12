@@ -55,6 +55,7 @@ export interface TableBlockData {
 export interface ListItemData {
   content: string;
   level: number;
+  label?: string;
 }
 
 export interface DocumentBlock {

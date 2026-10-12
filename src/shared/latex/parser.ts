@@ -1,4 +1,4 @@
-import type { DocumentBlock, ParseResult, TableRow, TableCell, TableBlockData } from './types.ts';
+import type { DocumentBlock, ParseResult, TableRow, TableCell, TableBlockData, ListItemData } from './types.ts';
 
 /**
  * Escapes plain user text to prevent XSS injection.
@@ -71,6 +71,10 @@ export function parseInlineText(
   s = s.replace(/\\&#36;/g, '&#36;');
   s = s.replace(/\\_/g, '_');
   s = s.replace(/\\&#35;/g, '&#35;');
+
+  // 10b. Clean any stray list environment commands that were not part of a list block
+  s = s.replace(/\\(begin|end)\{(itemize|enumerate|description)\}/g, '');
+  s = s.replace(/\\item(?:\[[^\]]*\])?\s*/g, '• ');
 
   // 11. Restore rendered math
   for (const item of mathPlaceholders) {
@@ -259,6 +263,114 @@ export function parseTabularContent(spec: string, body: string): TableBlockData 
 }
 
 /**
+ * Tokenizes LaTeX list environment body into structured items with nesting levels
+ */
+export function extractLatexListItems(body: string): ListItemData[] {
+  // Protect math formulas from being split
+  const mathPlaceholders: { id: string; val: string }[] = [];
+  let mCounter = 0;
+  let protectedBody = body;
+
+  protectedBody = protectedBody.replace(/\\\[([\s\S]*?)\\\]/g, (_, m) => {
+    const id = `___MATH_DISP_${mCounter++}___`;
+    mathPlaceholders.push({ id, val: `\\[${m}\\]` });
+    return id;
+  });
+  protectedBody = protectedBody.replace(/\$\$([\s\S]*?)\$\$/g, (_, m) => {
+    const id = `___MATH_DISP_${mCounter++}___`;
+    mathPlaceholders.push({ id, val: `$$${m}$$` });
+    return id;
+  });
+  protectedBody = protectedBody.replace(/\\\(([\s\S]*?)\\\)/g, (_, m) => {
+    const id = `___MATH_INL_${mCounter++}___`;
+    mathPlaceholders.push({ id, val: `\\(${m}\\)` });
+    return id;
+  });
+  protectedBody = protectedBody.replace(/(?<!\\)\$([^$\n]+?)(?<!\\)\$/g, (_, m) => {
+    const id = `___MATH_INL_${mCounter++}___`;
+    mathPlaceholders.push({ id, val: `$${m}$` });
+    return id;
+  });
+
+  const lines = protectedBody.split('\n');
+  const items: ListItemData[] = [];
+  let currentLevel = 0;
+  let currentItemText = '';
+  let currentLabel: string | undefined = undefined;
+
+  const pushCurrent = () => {
+    if (currentItemText.trim() || currentLabel) {
+      let restored = currentItemText.trim();
+      for (const p of mathPlaceholders) {
+        restored = restored.replace(p.id, p.val);
+      }
+      let restoredLabel = currentLabel;
+      if (restoredLabel) {
+        for (const p of mathPlaceholders) {
+          restoredLabel = restoredLabel.replace(p.id, p.val);
+        }
+      }
+      items.push({
+        content: restored,
+        level: currentLevel,
+        label: restoredLabel,
+      });
+      currentItemText = '';
+      currentLabel = undefined;
+    }
+  };
+
+  for (const rawL of lines) {
+    const l = rawL.trim();
+    if (!l) continue;
+
+    const tokenRegex = /(\\begin\{(?:itemize|enumerate|description)\}(?:\[[^\]]*\])?|\\end\{(?:itemize|enumerate|description)\}|\\item(?:\[[^\]]*\])?)/g;
+    let lastPos = 0;
+    let match: RegExpExecArray | null;
+    const tokens: { type: 'tag' | 'text'; val: string }[] = [];
+
+    while ((match = tokenRegex.exec(l)) !== null) {
+      if (match.index > lastPos) {
+        tokens.push({ type: 'text', val: l.slice(lastPos, match.index) });
+      }
+      tokens.push({ type: 'tag', val: match[0] });
+      lastPos = match.index + match[0].length;
+    }
+    if (lastPos < l.length) {
+      tokens.push({ type: 'text', val: l.slice(lastPos) });
+    }
+
+    if (tokens.length === 0) {
+      currentItemText += (currentItemText ? ' ' : '') + l;
+      continue;
+    }
+
+    for (const t of tokens) {
+      if (t.type === 'tag') {
+        if (t.val.startsWith('\\begin{')) {
+          pushCurrent();
+          currentLevel++;
+        } else if (t.val.startsWith('\\end{')) {
+          pushCurrent();
+          currentLevel = Math.max(0, currentLevel - 1);
+        } else if (t.val.startsWith('\\item')) {
+          pushCurrent();
+          const itemOptMatch = t.val.match(/^\\item\[([^\]]*)\]/);
+          if (itemOptMatch) {
+            currentLabel = itemOptMatch[1].trim();
+          }
+        }
+      } else {
+        currentItemText += (currentItemText ? ' ' : '') + t.val.trim();
+      }
+    }
+  }
+
+  pushCurrent();
+  return items;
+}
+
+/**
  * Comprehensive AST Parser for LaTeX documents, mathematical markdown, and tables
  */
 export function parseLatexDocument(source: string): ParseResult {
@@ -303,6 +415,17 @@ export function parseLatexDocument(source: string): ParseResult {
       trimmed.startsWith('\\date{')
     ) {
       i++;
+      continue;
+    }
+
+    // Pre-check: If line has text before \begin{itemize}, \begin{enumerate}, or \begin{description}, split it
+    const inlineListStart = trimmed.match(/^(.*?)(\\begin\{(?:itemize|enumerate|description)\}.*)$/);
+    if (inlineListStart && inlineListStart[1].trim() && !trimmed.startsWith('\\begin{') && !trimmed.startsWith('\\[')) {
+      blocks.push({
+        type: 'paragraph',
+        content: inlineListStart[1].trim(),
+      });
+      lines[i] = inlineListStart[2].trim();
       continue;
     }
 
@@ -518,32 +641,89 @@ export function parseLatexDocument(source: string): ParseResult {
       continue;
     }
 
-    // 8. Lists: \begin{enumerate} or \begin{itemize}
-    const listMatch = trimmed.match(/^\\begin\{(enumerate|itemize)\}/);
-    if (listMatch) {
-      const listType = listMatch[1];
-      const endTag = `\\end{${listType}}`;
-      const items: string[] = [];
-      let currentItem = '';
+    // 8. Lists: \begin{enumerate}, \begin{itemize}, or \begin{description}
+    const listStartMatch = trimmed.match(/^\\begin\{(enumerate|itemize|description)\}(?:\[[^\]]*\])?/);
+    if (listStartMatch) {
+      const rootListType = listStartMatch[1];
+      let depth = 0;
+      const collectedSegments: string[] = [];
+      let remainingAfterEnd = '';
 
-      i++;
-      while (i < lines.length && !lines[i].trim().includes(endTag)) {
-        const l = lines[i].trim();
-        if (l.startsWith('\\item')) {
-          if (currentItem) items.push(currentItem);
-          currentItem = l.replace(/^\\item\s*/, '');
-        } else {
-          currentItem += (currentItem ? ' ' : '') + l;
+      const beginRegex = /\\begin\{(itemize|enumerate|description)\}(?:\[[^\]]*\])?/g;
+      const endRegex = /\\end\{(itemize|enumerate|description)\}/g;
+
+      while (i < lines.length) {
+        const line = lines[i];
+        beginRegex.lastIndex = 0;
+        endRegex.lastIndex = 0;
+
+        const events: { type: 'begin' | 'end'; env: string; index: number; length: number }[] = [];
+        let m: RegExpExecArray | null;
+        while ((m = beginRegex.exec(line)) !== null) {
+          events.push({ type: 'begin', env: m[1], index: m.index, length: m[0].length });
         }
-        i++;
+        while ((m = endRegex.exec(line)) !== null) {
+          events.push({ type: 'end', env: m[1], index: m.index, length: m[0].length });
+        }
+        events.sort((a, b) => a.index - b.index);
+
+        if (events.length === 0) {
+          collectedSegments.push(line);
+          i++;
+          continue;
+        }
+
+        let lastIdx = 0;
+        let lineFinished = false;
+
+        for (const ev of events) {
+          if (ev.type === 'begin') {
+            depth++;
+            if (depth === 1) {
+              lastIdx = ev.index + ev.length;
+            } else {
+              collectedSegments.push(line.slice(lastIdx, ev.index + ev.length));
+              lastIdx = ev.index + ev.length;
+            }
+          } else if (ev.type === 'end') {
+            depth--;
+            if (depth <= 0) {
+              collectedSegments.push(line.slice(lastIdx, ev.index));
+              remainingAfterEnd = line.slice(ev.index + ev.length).trim();
+              lineFinished = true;
+              break;
+            } else {
+              collectedSegments.push(line.slice(lastIdx, ev.index + ev.length));
+              lastIdx = ev.index + ev.length;
+            }
+          }
+        }
+
+        if (lineFinished) {
+          i++;
+          break;
+        } else {
+          if (lastIdx < line.length) {
+            collectedSegments.push(line.slice(lastIdx));
+          }
+          i++;
+        }
       }
-      if (currentItem) items.push(currentItem);
-      i++; // Skip end tag
+
+      const rawBody = collectedSegments.join('\n');
+      const structuredItems = extractLatexListItems(rawBody);
 
       blocks.push({
-        type: listType === 'enumerate' ? 'list-ordered' : 'list-unordered',
-        meta: { listItems: items },
+        type: rootListType === 'enumerate' ? 'list-ordered' : 'list-unordered',
+        meta: {
+          structuredListItems: structuredItems,
+          listItems: structuredItems.map((it) => it.content),
+        },
       });
+
+      if (remainingAfterEnd) {
+        lines.splice(i, 0, remainingAfterEnd);
+      }
       continue;
     }
 
@@ -634,6 +814,37 @@ export function parseLatexDocument(source: string): ParseResult {
       continue;
     }
 
+    // 8d. Loose LaTeX \item outside list environment
+    const looseItemMatch = trimmed.match(/^\\item(?:\[([^\]]*)\])?\s*(.*)$/);
+    if (looseItemMatch) {
+      const items: ListItemData[] = [];
+      while (i < lines.length) {
+        const lineStr = lines[i].trim();
+        const m = lineStr.match(/^\\item(?:\[([^\]]*)\])?\s*(.*)$/);
+        if (m) {
+          items.push({
+            content: m[2] || '',
+            level: 0,
+            label: m[1]?.trim() || undefined,
+          });
+          i++;
+        } else if (lineStr !== '' && items.length > 0 && !lineStr.startsWith('\\') && !lineStr.startsWith('#')) {
+          items[items.length - 1].content += ' ' + lineStr;
+          i++;
+        } else {
+          break;
+        }
+      }
+      blocks.push({
+        type: 'list-unordered',
+        meta: {
+          structuredListItems: items,
+          listItems: items.map((it) => it.content),
+        },
+      });
+      continue;
+    }
+
     // 9. Headings
     if (trimmed.startsWith('# ') || trimmed.startsWith('\\section{')) {
       const text = trimmed.startsWith('# ')
@@ -685,6 +896,12 @@ export function parseLatexDocument(source: string): ParseResult {
         i++;
       }
       if (i < lines.length) i++;
+      continue;
+    }
+
+    // 11b. Ignore isolated stray list tags if any
+    if (trimmed.match(/^\\(begin|end)\{(itemize|enumerate|description)\}$/)) {
+      i++;
       continue;
     }
 

@@ -6,10 +6,13 @@ import html2canvas from 'html2canvas';
 import { 
   generateDocumentBodyHtml, 
   generateDocumentHtml, 
-  parseLatexDocument 
+  parseLatexDocument,
+  renderBlockToHtml,
+  escapeHtml,
+  DocumentBlock as SharedDocumentBlock
 } from '../shared/latex/index.ts';
 
-export { generateDocumentBodyHtml, generateDocumentHtml, parseLatexDocument };
+export { generateDocumentBodyHtml, generateDocumentHtml, parseLatexDocument, renderBlockToHtml };
 
 
 export interface LatexCompileError {
@@ -243,9 +246,11 @@ export function parseDocumentBlocks(rawLines: string[]): DocumentBlock[] {
       continue;
     }
 
-    // Ignore formal document tags
+    // Ignore formal document tags and list wrappers
     if (trimmed.includes('\\begin{document}') || trimmed.includes('\\end{document}') ||
-        trimmed === '\\maketitle' || trimmed.startsWith('\\documentclass')) {
+        trimmed === '\\maketitle' || trimmed.startsWith('\\documentclass') ||
+        trimmed.startsWith('\\usepackage') ||
+        trimmed.match(/^\\(begin|end)\{(itemize|enumerate|description)\}/)) {
       i++;
       continue;
     }
@@ -350,7 +355,7 @@ export function parseDocumentBlocks(rawLines: string[]): DocumentBlock[] {
     // 5. List items
     if (trimmed.startsWith('* ') || trimmed.startsWith('- ') || trimmed.startsWith('\\item') || rawLine.match(/^\s+[*•-]/)) {
       const isNested = rawLine.startsWith('  ') || rawLine.startsWith('\t');
-      const itemText = trimmed.replace(/^(\*|-|•|\\item)\s*/, '');
+      const itemText = trimmed.replace(/^(\*|-|•|\\item(?:\[[^\]]*\])?)\s*/, '');
       blocks.push({ type: 'list-item', content: itemText, isNested });
       i++;
       continue;
@@ -367,7 +372,7 @@ export function parseDocumentBlocks(rawLines: string[]): DocumentBlock[] {
 /**
  * Renders an individual DocumentBlock into clean, scoped HTML
  */
-export function renderSingleBlockHtml(block: DocumentBlock): string {
+export function renderSingleBlockHtml(block: DocumentBlock | SharedDocumentBlock | any): string {
   switch (block.type) {
     case 'h1':
       return `
@@ -414,14 +419,14 @@ export function renderSingleBlockHtml(block: DocumentBlock): string {
       if (hasMultipleParts) {
         const parts = content
           .split(/(?:,\s*\\quad|;\s*\\quad|\s*\\quad\s*|\s*\\qquad\s*)/)
-          .map((s) => s.trim())
+          .map((s: string) => s.trim())
           .filter(Boolean);
 
         if (parts.length > 1) {
           return `
             <div class="docflow-block docflow-math katex-display-center text-center my-3 py-2.5 px-3 bg-slate-50/90 rounded-xl border border-slate-200/80 shadow-2xs max-w-full overflow-hidden" style="box-sizing: border-box;">
               <div class="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 max-w-full">
-                ${parts.map((p, idx) => {
+                ${parts.map((p: string, idx: number) => {
                   const hasComma = idx < parts.length - 1 && !p.endsWith(',') && !p.endsWith(';');
                   return `<span class="inline-block" style="font-size: 0.95em;">${renderKaTeX(hasComma ? p + ',' : p, false)}</span>`;
                 }).join('')}
@@ -461,12 +466,19 @@ export function renderSingleBlockHtml(block: DocumentBlock): string {
         </div>
       `;
 
+    case 'list-ordered':
+    case 'list-unordered':
+      return renderBlockToHtml(block);
+
     case 'paragraph':
       return `
         <div class="docflow-block docflow-p my-2 text-xs sm:text-sm text-slate-700 leading-relaxed break-words max-w-full">
           ${parseInlineContent(block.content)}
         </div>
       `;
+
+    default:
+      return '';
   }
 }
 
@@ -526,10 +538,10 @@ export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
     const docAuthor = authorMatch ? authorMatch[1] : '';
     const docDate = dateMatch ? (dateMatch[1] === '\\today' ? new Date().toLocaleDateString('vi-VN') : dateMatch[1]) : '';
 
-    const lines = normalizedCode.split('\n');
-    const rawBlocks = parseDocumentBlocks(lines);
+    const parsedDoc = parseLatexDocument(normalizedCode);
+    const rawBlocks = parsedDoc.blocks;
     const filteredBlocks = rawBlocks.filter((b, idx) => {
-      if (idx < 5 && b.type === 'h1' && docTitle && b.content.toLowerCase() === docTitle.toLowerCase()) {
+      if (idx < 5 && b.type === 'h1' && docTitle && b.content && b.content.toLowerCase() === docTitle.toLowerCase()) {
         return false;
       }
       return true;
@@ -541,12 +553,12 @@ export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
     if (docTitle) {
       blockHtmlUnits.push(`
         <div class="docflow-block docflow-header pb-4 mb-4 border-b-2 border-slate-200 text-center">
-          <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight mb-2">${docTitle}</h1>
+          <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight mb-2">${escapeHtml(docTitle)}</h1>
           ${(docAuthor || docDate) ? `
             <div class="text-xs font-medium text-slate-500 flex items-center justify-center gap-3">
-              ${docAuthor ? `<span>Tác giả: <strong class="text-slate-700 font-semibold">${docAuthor}</strong></span>` : ''}
+              ${docAuthor ? `<span>Tác giả: <strong class="text-slate-700 font-semibold">${escapeHtml(docAuthor)}</strong></span>` : ''}
               ${(docAuthor && docDate) ? `<span>•</span>` : ''}
-              ${docDate ? `<span>Ngày: ${docDate}</span>` : ''}
+              ${docDate ? `<span>Ngày: ${escapeHtml(docDate)}</span>` : ''}
             </div>
           ` : ''}
         </div>
@@ -554,7 +566,7 @@ export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
     }
 
     filteredBlocks.forEach((block) => {
-      blockHtmlUnits.push(renderSingleBlockHtml(block));
+      blockHtmlUnits.push(renderBlockToHtml(block));
     });
 
     // Create a live pagination testing container matching exact A4 dimensions
@@ -743,8 +755,8 @@ export async function compileLatexToPdf(code: string): Promise<Uint8Array> {
  * Converts LaTeX source or Math Markdown to a structured Word .docx document
  */
 export async function compileLatexToWord(code: string): Promise<Blob> {
-  const lines = code.replace(/\\\\([()[\]])/g, '\\$1').split('\n');
-  const blocks = parseDocumentBlocks(lines);
+  const parsedDoc = parseLatexDocument(code);
+  const blocks = parsedDoc.blocks;
   const paragraphs: Paragraph[] = [];
 
   const titleMatch = code.match(/\\title\{([^}]+)\}/);
@@ -771,13 +783,13 @@ export async function compileLatexToWord(code: string): Promise<Blob> {
     );
   }
 
-  function addBlockToWord(b: DocumentBlock) {
+  function addBlockToWord(b: SharedDocumentBlock | any) {
     switch (b.type) {
       case 'h1':
-        if (docTitle && b.content.toLowerCase() === docTitle.toLowerCase()) return;
+        if (docTitle && b.content && b.content.toLowerCase() === docTitle.toLowerCase()) return;
         paragraphs.push(
           new Paragraph({
-            text: cleanInlineMath(b.content),
+            text: cleanInlineMath(b.content || ''),
             heading: HeadingLevel.HEADING_1,
           })
         );
@@ -786,7 +798,7 @@ export async function compileLatexToWord(code: string): Promise<Blob> {
       case 'h2':
         paragraphs.push(
           new Paragraph({
-            text: cleanInlineMath(b.content),
+            text: cleanInlineMath(b.content || ''),
             heading: HeadingLevel.HEADING_2,
           })
         );
@@ -795,7 +807,7 @@ export async function compileLatexToWord(code: string): Promise<Blob> {
       case 'h3':
         paragraphs.push(
           new Paragraph({
-            text: cleanInlineMath(b.content),
+            text: cleanInlineMath(b.content || ''),
             heading: HeadingLevel.HEADING_3,
           })
         );
@@ -806,7 +818,7 @@ export async function compileLatexToWord(code: string): Promise<Blob> {
           new Paragraph({
             children: [
               new TextRun({
-                text: `[Công thức]  ${cleanMathExpression(b.content)}`,
+                text: `[Công thức]  ${cleanMathExpression(b.content || '')}`,
                 bold: true,
                 color: '0369a1',
               }),
@@ -821,10 +833,42 @@ export async function compileLatexToWord(code: string): Promise<Blob> {
         }
         break;
 
+      case 'list-unordered': {
+        const rawStructured = b.meta?.structuredListItems;
+        const rawSimple = b.meta?.listItems;
+        const items = rawStructured || (rawSimple ? rawSimple.map((c: string) => ({ content: c, level: 0 })) : []);
+        items.forEach((it: any) => {
+          const indent = '  '.repeat(it.level || 0);
+          const bullet = it.label ? `${it.label} ` : '• ';
+          paragraphs.push(
+            new Paragraph({
+              text: `${indent}${bullet}${cleanInlineMath(it.content).replace(/\*\*([^*]+)\*\*/g, '$1')}`,
+            })
+          );
+        });
+        break;
+      }
+
+      case 'list-ordered': {
+        const rawStructured = b.meta?.structuredListItems;
+        const rawSimple = b.meta?.listItems;
+        const items = rawStructured || (rawSimple ? rawSimple.map((c: string) => ({ content: c, level: 0 })) : []);
+        items.forEach((it: any, idx: number) => {
+          const indent = '  '.repeat(it.level || 0);
+          const prefix = it.label ? `${it.label} ` : `${idx + 1}. `;
+          paragraphs.push(
+            new Paragraph({
+              text: `${indent}${prefix}${cleanInlineMath(it.content).replace(/\*\*([^*]+)\*\*/g, '$1')}`,
+            })
+          );
+        });
+        break;
+      }
+
       case 'list-item':
         paragraphs.push(
           new Paragraph({
-            text: `• ${cleanInlineMath(b.content).replace(/\*\*([^*]+)\*\*/g, '$1')}`,
+            text: `• ${cleanInlineMath(b.content || '').replace(/\*\*([^*]+)\*\*/g, '$1')}`,
           })
         );
         break;

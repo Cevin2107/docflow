@@ -191,6 +191,9 @@ export function renderBlockToHtml(block: DocumentBlock): string {
         const itemsHtml = structured
           .map((item) => {
             const levelClass = item.level > 0 ? ` docflow-list-level-${item.level}` : '';
+            if (item.label) {
+              return `<li class="docflow-list-item${levelClass} docflow-has-custom-label"><span class="docflow-custom-bullet">${parseInlineText(item.label, safeRenderKaTeX)}</span><span class="docflow-item-body">${parseInlineText(item.content, safeRenderKaTeX)}</span></li>`;
+            }
             return `<li class="docflow-list-item${levelClass}">${parseInlineText(item.content, safeRenderKaTeX)}</li>`;
           })
           .join('\n');
@@ -210,6 +213,9 @@ export function renderBlockToHtml(block: DocumentBlock): string {
         const itemsHtml = structured
           .map((item) => {
             const levelClass = item.level > 0 ? ` docflow-list-level-${item.level}` : '';
+            if (item.label) {
+              return `<li class="docflow-list-item${levelClass} docflow-has-custom-label"><span class="docflow-custom-bullet">${parseInlineText(item.label, safeRenderKaTeX)}</span><span class="docflow-item-body">${parseInlineText(item.content, safeRenderKaTeX)}</span></li>`;
+            }
             return `<li class="docflow-list-item${levelClass}">${parseInlineText(item.content, safeRenderKaTeX)}</li>`;
           })
           .join('\n');

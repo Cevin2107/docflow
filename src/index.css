@@ -303,13 +303,34 @@
 .docflow-list-ordered,
 .docflow-list-unordered {
   margin: 0.6em 0;
-  padding-left: 1.8em;
+  padding-left: 0;
+  list-style: none;
 }
 
-.docflow-list-ordered li,
-.docflow-list-unordered li {
+.docflow-list-item {
+  position: relative;
+  padding-left: 1.6em;
   margin: 0.35em 0;
-  line-height: 1.6;
+  line-height: 1.65;
+  text-align: left;
+}
+
+.docflow-list-item.docflow-has-custom-label {
+  padding-left: 0.2em;
+}
+
+.docflow-list-item.docflow-has-custom-label::before {
+  content: none !important;
+  display: none !important;
+}
+
+.docflow-custom-bullet {
+  display: inline-block;
+  min-width: 1.4em;
+  font-weight: 700;
+  color: #1e3a8a;
+  margin-right: 0.45em;
+  text-align: left;
 }
 
 .docflow-warning {

@@ -419,6 +419,24 @@ body {
   text-align: left;
 }
 
+.docflow-list-item.docflow-has-custom-label {
+  padding-left: 0.2em;
+}
+
+.docflow-list-item.docflow-has-custom-label::before {
+  content: none !important;
+  display: none !important;
+}
+
+.docflow-custom-bullet {
+  display: inline-block;
+  min-width: 1.4em;
+  font-weight: 700;
+  color: #1e3a8a;
+  margin-right: 0.45em;
+  text-align: left;
+}
+
 /* Level 0: Chấm tròn to ở đầu dòng */
 .docflow-list-unordered > .docflow-list-item::before {
   content: "•";
