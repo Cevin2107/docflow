@@ -263,6 +263,42 @@ export function parseTabularContent(spec: string, body: string): TableBlockData 
 }
 
 /**
+ * Extracts the first balanced braced group { ... } from the start of a string
+ */
+export function extractFirstBracedGroup(str: string): { content: string; rest: string } {
+  const trimmed = str.trimStart();
+  if (!trimmed.startsWith('{')) {
+    return { content: '', rest: str };
+  }
+
+  let depth = 0;
+  const startIdx = str.indexOf('{');
+  let endIdx = -1;
+
+  for (let i = startIdx; i < str.length; i++) {
+    const ch = str[i];
+    if (ch === '{') {
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        endIdx = i;
+        break;
+      }
+    }
+  }
+
+  if (endIdx !== -1) {
+    return {
+      content: str.slice(startIdx + 1, endIdx),
+      rest: str.slice(endIdx + 1),
+    };
+  }
+
+  return { content: '', rest: str };
+}
+
+/**
  * Tokenizes LaTeX list environment body into structured items with nesting levels
  */
 export function extractLatexListItems(body: string): ListItemData[] {
@@ -418,14 +454,30 @@ export function parseLatexDocument(source: string): ParseResult {
       continue;
     }
 
-    // Pre-check: If line has text before \begin{itemize}, \begin{enumerate}, or \begin{description}, split it
-    const inlineListStart = trimmed.match(/^(.*?)(\\begin\{(?:itemize|enumerate|description)\}.*)$/);
-    if (inlineListStart && inlineListStart[1].trim() && !trimmed.startsWith('\\begin{') && !trimmed.startsWith('\\[')) {
+    // Pre-check: If line has text before environments, split it
+    const inlineEnvStart = trimmed.match(/^(.*?)(\\begin\{(?:itemize|enumerate|description|tabular|tabular\*|longtable|table|table\*|center)\}.*)$/);
+    if (inlineEnvStart && inlineEnvStart[1].trim() && !trimmed.startsWith('\\begin{') && !trimmed.startsWith('\\[')) {
       blocks.push({
         type: 'paragraph',
-        content: inlineListStart[1].trim(),
+        content: inlineEnvStart[1].trim(),
       });
-      lines[i] = inlineListStart[2].trim();
+      lines[i] = inlineEnvStart[2].trim();
+      continue;
+    }
+
+    // Skip LaTeX layout / alignment commands
+    if (
+      trimmed === '\\centering' ||
+      trimmed === '\\raggedright' ||
+      trimmed === '\\raggedleft' ||
+      trimmed === '\\noindent' ||
+      trimmed === '\\bigskip' ||
+      trimmed === '\\medskip' ||
+      trimmed === '\\smallskip' ||
+      trimmed === '\\newpage' ||
+      trimmed === '\\clearpage'
+    ) {
+      i++;
       continue;
     }
 
@@ -448,58 +500,65 @@ export function parseLatexDocument(source: string): ParseResult {
       const caption = capMatch ? capMatch[1] : undefined;
       const label = labelMatch ? labelMatch[1] : undefined;
 
-      // Extract inner tabular environment
-      const tabMatch = tableContent.match(/\\begin\{(tabular|tabular\*|longtable)\}(\[[^\]]*\])?\s*\{([^}]+)\}([\s\S]*?)\\end\{\1\}/);
-      if (tabMatch) {
-        const envType = tabMatch[1];
-        const colSpec = tabMatch[3];
-        const tabBody = tabMatch[4];
-        const tableData = parseTabularContent(colSpec, tabBody);
-        tableData.caption = caption;
-        tableData.label = label;
+      const cleanTableContent = tableContent
+        .replace(/\\caption\{[^}]+\}/g, '')
+        .replace(/\\label\{[^}]+\}/g, '');
 
-        if (envType === 'tabular*' || envType === 'longtable') {
-          warnings.push(`Môi trường '\\begin{${envType}}' được render tương thích bảng chuẩn.`);
+      const innerParsed = parseLatexDocument(cleanTableContent);
+      let foundTable = false;
+      innerParsed.blocks.forEach(b => {
+        if (b.type === 'table' && b.meta?.tableData) {
+          if (!b.meta.tableData.caption) b.meta.tableData.caption = caption;
+          if (!b.meta.tableData.label) b.meta.tableData.label = label;
+          foundTable = true;
         }
-
-        blocks.push({
-          type: 'table',
-          meta: { tableData },
-        });
-      } else {
-        // Table with no inner tabular: parse lines recursively
-        const innerParsed = parseLatexDocument(tableContent);
-        innerParsed.blocks.forEach(b => {
-          if (b.type === 'table' && b.meta?.tableData) {
-            b.meta.tableData.caption = caption;
-            b.meta.tableData.label = label;
-          }
-          blocks.push(b);
-        });
-      }
+        blocks.push(b);
+      });
       continue;
     }
 
-    // 2. Bare Tabular Environment \begin{tabular}{spec} ... \end{tabular} or \begin{tabular*} / \begin{longtable}
-    const tabStartMatch = trimmed.match(/^\\begin\{(tabular|tabular\*|longtable)\}(\[[^\]]*\])?\s*\{([^}]+)\}/);
-    if (tabStartMatch) {
-      const envType = tabStartMatch[1];
-      const colSpec = tabStartMatch[3];
+    // 2. Tabular Environment: \begin{tabular}, \begin{tabular*}, \begin{longtable}
+    const tabMatch = trimmed.match(/^\\begin\{(tabular|tabular\*|longtable)\}/);
+    if (tabMatch) {
+      const envType = tabMatch[1];
       const endTag = `\\end{${envType}}`;
       const tableLines: string[] = [];
 
-      // Content on the same line after \begin{tabular}{...}
-      const restOfLine = trimmed.replace(tabStartMatch[0], '').trim();
-      if (restOfLine) tableLines.push(restOfLine);
+      let firstLineRest = trimmed.slice(tabMatch[0].length);
+      tableLines.push(firstLineRest);
 
       i++;
       while (i < lines.length && !lines[i].trim().includes(endTag)) {
         tableLines.push(lines[i]);
         i++;
       }
-      i++; // Skip end tag
 
-      const tableData = parseTabularContent(colSpec, tableLines.join(' '));
+      if (i < lines.length) {
+        const closingLine = lines[i];
+        const endIdx = closingLine.indexOf(endTag);
+        if (endIdx > 0) {
+          tableLines.push(closingLine.slice(0, endIdx));
+        }
+        i++; // Skip end tag
+      }
+
+      let rawContent = tableLines.join('\n').trim();
+
+      // Skip optional alignment parameter [t|b|c]
+      rawContent = rawContent.replace(/^\s*\[[^\]]*\]/, '').trim();
+
+      // If tabular*, extract width parameter first
+      if (envType === 'tabular*') {
+        const widthExtraction = extractFirstBracedGroup(rawContent);
+        rawContent = widthExtraction.rest.trim();
+      }
+
+      // Extract colSpec
+      const specExtraction = extractFirstBracedGroup(rawContent);
+      const colSpec = specExtraction.content;
+      const tableBody = specExtraction.rest;
+
+      const tableData = parseTabularContent(colSpec, tableBody);
       if (envType === 'tabular*' || envType === 'longtable') {
         warnings.push(`Môi trường '\\begin{${envType}}' được render tương thích bảng chuẩn.`);
       }
@@ -508,6 +567,37 @@ export function parseLatexDocument(source: string): ParseResult {
         type: 'table',
         meta: { tableData },
       });
+      continue;
+    }
+
+    // 2b. Alignment environments: center, flushleft, flushright
+    const alignEnvMatch = trimmed.match(/^\\begin\{(center|flushleft|flushright)\}/);
+    if (alignEnvMatch) {
+      const envType = alignEnvMatch[1];
+      const endTag = `\\end{${envType}}`;
+      const innerLines: string[] = [];
+
+      const afterBegin = trimmed.slice(alignEnvMatch[0].length).trim();
+      if (afterBegin && !afterBegin.includes(endTag)) {
+        innerLines.push(afterBegin);
+      }
+
+      i++;
+      while (i < lines.length && !lines[i].trim().includes(endTag)) {
+        innerLines.push(lines[i]);
+        i++;
+      }
+      if (i < lines.length) {
+        const closingLine = lines[i];
+        const endIdx = closingLine.indexOf(endTag);
+        if (endIdx > 0) {
+          innerLines.push(closingLine.slice(0, endIdx));
+        }
+        i++; // Skip \end{...}
+      }
+
+      const innerParsed = parseLatexDocument(innerLines.join('\n'));
+      innerParsed.blocks.forEach((b) => blocks.push(b));
       continue;
     }
 
